@@ -381,6 +381,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Setup Event Listeners
   setupEventListeners();
+
+  // Sticky top navbar that auto-hides on scroll-down, shows on scroll-up
+  initStickyNav();
   
   // Try connecting to Supabase if configured
   await initializeSupabase();
@@ -1667,8 +1670,10 @@ function renderGames() {
     let matchesTab = true;
     if (appState.filters !== 'all') {
       if (appState.filters === 'other') {
-        const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy'];
+        const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna'];
         matchesTab = !knownPlatforms.includes(game.platform);
+      } else if (appState.filters === 'Luna') {
+        matchesTab = game.platform === 'Luna' || game.platform === 'Amazon Gaming';
       } else {
         matchesTab = game.platform === appState.filters;
       }
@@ -1859,6 +1864,41 @@ function updateStats() {
 
   statTotalGames.textContent = totalGames.toLocaleString();
   statTotalHours.textContent = `${totalHours.toLocaleString()} hrs`;
+}
+
+// Sticky navbar auto-hide: hides when scrolling down, reveals when scrolling up
+function initStickyNav() {
+  const scroller = document.querySelector('.main-content');
+  const navbar = document.querySelector('.top-navbar');
+  if (!scroller || !navbar) return;
+
+  let lastScroll = scroller.scrollTop;
+
+  // Start transparent at the top
+  navbar.classList.add('nav-top');
+
+  scroller.addEventListener('scroll', () => {
+    const current = scroller.scrollTop;
+
+    if (current <= 4) {
+      // Near the top: show + blend with backdrop
+      navbar.classList.remove('nav-hidden');
+      navbar.classList.add('nav-top');
+    } else {
+      // Scrolled away: use the glassy (scrolled) style
+      navbar.classList.remove('nav-top');
+
+      if (current > lastScroll) {
+        // Scrolling down -> hide
+        navbar.classList.add('nav-hidden');
+      } else {
+        // Scrolling up -> show
+        navbar.classList.remove('nav-hidden');
+      }
+    }
+
+    lastScroll = current;
+  }, { passive: true });
 }
 
 // Page Switcher Action
