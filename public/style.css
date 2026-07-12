@@ -680,12 +680,6 @@ body {
   font-size: 0.85rem;
 }
 
-.section-accent {
-  flex-grow: 1;
-  height: 1px;
-  background: linear-gradient(90deg, var(--border-glass) 0%, transparent 100%);
-}
-
 /* Cinematic page-level backdrop — a background layer attached to the page,
    not a hero container. The artwork simply exists behind everything. */
 #library-view {
@@ -723,53 +717,80 @@ body {
    body background far below the fold. No box, no edge, no hero. */
 .backdrop-stage {
   position: absolute;
-  top: 0;
+  top: -2rem;
   left: -6rem;
-  right: -3rem;
+  right: -4rem;
   height: clamp(720px, 92vh, 1000px);
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
 }
 
-.page-backdrop {
+/* Two stacked backdrop layers. Only `transform` (Ken Burns) and `opacity`
+   (crossfade) ever animate — blur, mask, scrim and gradients stay fixed so the
+   artwork changes under a motionless atmosphere. */
+.backdrop-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  /* Crossfade between the two layers. */
+  transition: opacity var(--backdrop-fade, 1000ms) ease-in-out;
+  /* The Ken Burns motion runs across the image's whole lifetime and is driven
+     by per-image CSS variables so each backdrop gets a different, subtle move. */
+  --kb-from: scale(1.03);
+  --kb-to: scale(1.07);
+  --kb-duration: 10000ms;
+  /* Top 3/4 is boosted; the bottom baseline (set per-image by brightness)
+     is preserved via --backdrop-bottom-ratio so the seamless merge is kept. */
+  --backdrop-opacity-top: 0.72;
+  --backdrop-bottom-ratio: calc(var(--backdrop-opacity, 0.52) / var(--backdrop-opacity-top));
+}
+
+.backdrop-layer.is-active {
+  opacity: var(--backdrop-opacity-top, 0.72);
+}
+
+.backdrop-layer.is-animating {
+  animation: backdropKenBurns var(--kb-duration) ease-in-out both;
+}
+
+.backdrop-img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center 26%;
-  opacity: 0.9;
-  filter: blur(2px) brightness(0.9) contrast(0.98) saturate(1.22);
-  transform: scale(1.08);
+  /* Static grading only — never animated. */
+  filter: blur(1px) brightness(0.9) contrast(0.98) saturate(1.22);
   transform-origin: center 24%;
-  transition: opacity 0.4s ease;
-  animation: heroKenBurns 32s ease-in-out infinite alternate;
   /* Fade the image itself over hundreds of pixels — a slow, multi-step
-     dissolve so the eye never sees where it ends. */
+     dissolve so the eye never sees where it ends. Stationary.
+     Top 3/4 stays fully opaque (boosted); the bottom 1/4 reproduces the
+     original bottom fade exactly (scaled by --backdrop-bottom-ratio) so the
+     merge into the page background is preserved. */
   -webkit-mask-image: linear-gradient(to bottom,
-    #000 0%, #000 28%,
-    rgba(0, 0, 0, 0.85) 44%,
-    rgba(0, 0, 0, 0.6) 60%,
-    rgba(0, 0, 0, 0.3) 78%,
-    rgba(0, 0, 0, 0.08) 92%,
+    #000 0%,
+    #000 66%,
+    rgba(0, 0, 0, calc(var(--backdrop-bottom-ratio) * 0.6)) 75%,
+    rgba(0, 0, 0, calc(var(--backdrop-bottom-ratio) * 0.3)) 82%,
+    rgba(0, 0, 0, calc(var(--backdrop-bottom-ratio) * 0.08)) 92%,
     transparent 100%);
           mask-image: linear-gradient(to bottom,
-    #000 0%, #000 28%,
-    rgba(0, 0, 0, 0.85) 44%,
-    rgba(0, 0, 0, 0.6) 60%,
-    rgba(0, 0, 0, 0.3) 78%,
-    rgba(0, 0, 0, 0.08) 92%,
+    #000 0%,
+    #000 66%,
+    rgba(0, 0, 0, calc(var(--backdrop-bottom-ratio) * 0.6)) 75%,
+    rgba(0, 0, 0, calc(var(--backdrop-bottom-ratio) * 0.3)) 82%,
+    rgba(0, 0, 0, calc(var(--backdrop-bottom-ratio) * 0.08)) 92%,
     transparent 100%);
 }
 
-.page-backdrop.hidden {
-  display: none;
-}
-
-@keyframes heroKenBurns {
-  from { transform: scale(1.12); }
-  to { transform: scale(1.2); }
+@keyframes backdropKenBurns {
+  from { transform: var(--kb-from); }
+  to   { transform: var(--kb-to); }
 }
 
 /* Atmospheric grading that melts the artwork into the page: a whisper of

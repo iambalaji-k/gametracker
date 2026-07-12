@@ -358,12 +358,262 @@ const refreshArtworkBtn = document.getElementById('refresh-artwork-btn');
 const statTotalGames = document.getElementById('stat-total-games');
 const statTotalHours = document.getElementById('stat-total-hours');
 
-// Top Stage Backdrop Element
-const topStageBg = document.getElementById('top-stage-bg');
-let backdropGameId = null;
-if (topStageBg) {
-  topStageBg.addEventListener('error', () => topStageBg.classList.add('hidden'));
+// ---- Cinematic backdrop rotation (two-layer crossfade + Ken Burns) ----
+const backdropStage = document.querySelector('.backdrop-stage');
+const backdropLayers = backdropStage
+  ? Array.from(backdropStage.querySelectorAll('.backdrop-layer'))
+  : [];
+const heroTitle = document.getElementById('hero-title');
+
+// Tunables — display each backdrop ~8–10s, crossfade 900–1200ms.
+const BACKDROP_LIFETIME = 10000; // ms a backdrop stays the focus
+const BACKDROP_FADE = 1000;      // ms crossfade duration
+const BACKDROP_MIN_OPACITY = 0.45;
+const BACKDROP_MAX_OPACITY = 0.60;
+const BACKDROP_RETRY_COOLDOWN = 20000; // ms before retrying a failed image
+
+// Six extremely subtle Ken Burns motions. Each image picks a different one
+// (never repeating the previous) and animates across its whole lifetime.
+const BACKDROP_MOTIONS = [
+  { name: 'zoom-in',  from: 'scale(1.03)',  to: 'scale(1.07)' },
+  { name: 'zoom-out', from: 'scale(1.07)',  to: 'scale(1.03)' },
+  { name: 'pan-left', from: 'translateX(16px)',  to: 'translateX(-16px)' },
+  { name: 'pan-right',from: 'translateX(-16px)', to: 'translateX(16px)' },
+  { name: 'pan-up',   from: 'translateY(12px)',  to: 'translateY(-12px)' },
+  { name: 'pan-down', from: 'translateY(-12px)', to: 'translateY(12px)' },
+];
+
+let backdropPool = [];
+let backdropPoolSignature = '';
+let backdropIndex = -1;
+let backdropQueue = [];       // shuffled pool indices for non-repeating random order
+let backdropQueuePos = 0;
+let backdropActive = 0;       // which layer (0|1) is currently visible
+let backdropLastMotion = null;
+let backdropTimer = null;
+let backdropRunning = false;
+const backdropFailureCooldown = new Map(); // url -> next-allowed timestamp
+
+// Build the rotation pool from the synced library (backdrop > steam hero > cover).
+function buildBackdropPool() {
+  const pool = [];
+  const seen = new Set();
+  for (const g of appState.games) {
+    let url = (g.backdrop_url && String(g.backdrop_url).trim()) ? g.backdrop_url : null;
+    if (!url && g.platform === 'Steam' && g.appid) {
+      url = `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_hero.jpg`;
+    }
+    if (!url && g.cover_url) url = g.cover_url;
+    if (!url) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    pool.push({ url, name: g.name || '' });
+  }
+  return pool;
 }
+
+// Preload an image; resolves only once fully downloaded (no fading until then).
+function preloadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('backdrop load failed: ' + url));
+    img.src = url;
+  });
+}
+
+// Best-effort average luminance -> opacity (brighter images sit dimmer).
+// Cross-origin images taint the canvas; we catch that and return null (default).
+function sampleBrightness(img) {
+  try {
+    const w = 16, h = 16;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      sum += lum; n++;
+    }
+    const t = Math.min(1, Math.max(0, (sum / n) / 255));
+    // Bright (t->1) -> lower opacity; dark (t->0) -> higher opacity.
+    return BACKDROP_MAX_OPACITY - t * (BACKDROP_MAX_OPACITY - BACKDROP_MIN_OPACITY);
+  } catch (e) {
+    return null;
+  }
+}
+
+function pickMotion() {
+  let m;
+  do {
+    m = BACKDROP_MOTIONS[Math.floor(Math.random() * BACKDROP_MOTIONS.length)];
+  } while (m.name === backdropLastMotion && BACKDROP_MOTIONS.length > 1);
+  backdropLastMotion = m.name;
+  return m;
+}
+
+// Build a shuffled order of pool indices so the sequence is random but never
+// repeats an image until the whole pool has been seen. The seam between two
+// shuffles avoids an immediate repeat of the just-shown image.
+function refillBackdropQueue() {
+  const order = backdropPool.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  if (order.length > 1 && backdropIndex >= 0 && order[0] === backdropIndex) {
+    [order[0], order[1]] = [order[1], order[0]];
+  }
+  backdropQueue = order;
+  backdropQueuePos = 0;
+}
+
+// Pop the next random, non-repeating pool item (skipping URLs in failure
+// cooldown). Reshuffles automatically once the queue is exhausted.
+function nextBackdropItem() {
+  const tryFrom = (start) => {
+    for (let p = start; p < backdropQueue.length; p++) {
+      const idx = backdropQueue[p];
+      const candidate = backdropPool[idx];
+      const cooldown = backdropFailureCooldown.get(candidate.url) || 0;
+      if (Date.now() >= cooldown) {
+        backdropQueuePos = p + 1;
+        backdropIndex = idx;
+        return candidate;
+      }
+    }
+    return null;
+  };
+  let found = tryFrom(backdropQueuePos);
+  if (!found) {
+    refillBackdropQueue();
+    found = tryFrom(0);
+  }
+  return found;
+}
+
+function scheduleNextBackdrop() {
+  clearTimeout(backdropTimer);
+  backdropTimer = setTimeout(advanceBackdrop, BACKDROP_LIFETIME);
+}
+
+// Advance to the next backdrop: preload, assign to the hidden layer, begin Ken
+// Burns immediately, then crossfade. Never swaps until the next image is loaded.
+async function advanceBackdrop() {
+  if (backdropLayers.length < 2) return;
+
+  if (backdropPool.length === 0) {
+    backdropPool = buildBackdropPool();
+    backdropPoolSignature = backdropPool.map(p => p.url).join('|');
+    backdropIndex = -1;
+    backdropQueue = [];
+    backdropQueuePos = 0;
+  }
+  if (backdropPool.length === 0) {
+    backdropLayers.forEach(l => l.classList.remove('is-active', 'is-animating'));
+    if (heroTitle) heroTitle.textContent = '';
+    return;
+  }
+
+  // Single available image: show it with a slow, endless Ken Burns. No cycling.
+  if (backdropPool.length === 1) {
+    const only = backdropPool[0];
+    const layer = backdropLayers[0];
+    const img = layer.querySelector('.backdrop-img');
+    const pre = await preloadImage(only.url).catch(() => null);
+    if (!pre) { scheduleNextBackdrop(); return; }
+    img.src = only.url;
+    const op = sampleBrightness(pre) ?? ((BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2);
+    layer.style.setProperty('--backdrop-opacity', op.toFixed(3));
+    const m = pickMotion();
+    layer.style.setProperty('--kb-from', m.from);
+    layer.style.setProperty('--kb-to', m.to);
+    layer.style.setProperty('--kb-duration', (BACKDROP_LIFETIME * 3) + 'ms');
+    layer.classList.remove('is-animating');
+    void layer.offsetWidth;
+    layer.classList.add('is-active', 'is-animating');
+    backdropLayers[1].classList.remove('is-active', 'is-animating');
+    if (heroTitle) heroTitle.textContent = only.name;
+    scheduleNextBackdrop();
+    return;
+  }
+
+  // Pick the next random, non-repeating image (skips URLs in failure cooldown).
+  const item = nextBackdropItem();
+  if (!item) { scheduleNextBackdrop(); return; }
+
+  let pre;
+  try {
+    pre = await preloadImage(item.url);
+  } catch (e) {
+    // Load failed: keep the current backdrop, retry this one later, move on.
+    backdropFailureCooldown.set(item.url, Date.now() + BACKDROP_RETRY_COOLDOWN);
+    scheduleNextBackdrop();
+    return;
+  }
+
+  const incoming = backdropLayers[1 - backdropActive];
+  const outgoing = backdropLayers[backdropActive];
+  const img = incoming.querySelector('.backdrop-img');
+
+  // Assign artwork to the hidden layer and (re)start its Ken Burns from the top.
+  img.src = item.url;
+  const op = sampleBrightness(pre) ?? ((BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2);
+  incoming.style.setProperty('--backdrop-opacity', op.toFixed(3));
+  const m = pickMotion();
+  incoming.style.setProperty('--kb-from', m.from);
+  incoming.style.setProperty('--kb-to', m.to);
+  incoming.style.setProperty('--kb-duration', BACKDROP_LIFETIME + 'ms');
+  incoming.classList.remove('is-animating');
+  void incoming.offsetWidth; // force reflow so the animation restarts cleanly
+  incoming.classList.add('is-animating');
+
+  // Crossfade: incoming fades in, outgoing fades out (blur/scrim stay fixed).
+  incoming.classList.add('is-active');
+  outgoing.classList.remove('is-active');
+
+  // Stop animating the now-hidden layer once the crossfade settles (saves CPU).
+  setTimeout(() => outgoing.classList.remove('is-animating'), BACKDROP_FADE + 60);
+
+  backdropActive = 1 - backdropActive;
+  if (heroTitle) heroTitle.textContent = item.name;
+
+  scheduleNextBackdrop();
+}
+
+// Rebuild the pool and ensure the rotation is running. Safe to call repeatedly
+// (e.g. after every library render) — the random order is only reset when the
+// actual set of images changes, so filtering/sorting won't disrupt the sequence.
+function updateStageBackground() {
+  const newPool = buildBackdropPool();
+  const sig = newPool.map(p => p.url).join('|');
+  if (sig !== backdropPoolSignature) {
+    backdropPool = newPool;
+    backdropPoolSignature = sig;
+    backdropIndex = -1;
+    backdropQueue = [];
+    backdropQueuePos = 0;
+  }
+  if (backdropPool.length === 0) {
+    backdropLayers.forEach(l => l.classList.remove('is-active', 'is-animating'));
+    if (heroTitle) heroTitle.textContent = '';
+    return;
+  }
+  if (backdropRunning) return; // already cycling; next loop picks up new pool
+  backdropRunning = true;
+  advanceBackdrop();
+}
+
+// Pause the rotation when the tab is hidden to keep CPU/GPU idle; resume on show.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearTimeout(backdropTimer);
+  } else if (backdropRunning) {
+    advanceBackdrop();
+  }
+});
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', async () => {
@@ -1776,49 +2026,6 @@ function renderGames() {
   gamesGrid.appendChild(fragment);
   lucide.createIcons();
   updateStageBackground();
-}
-
-// Update the decorative top-stage backdrop with a random game cover
-function updateStageBackground() {
-  if (!topStageBg) return;
-
-  const heroTitle = document.getElementById('hero-title');
-  const withCovers = appState.games.filter(g => g.cover_url);
-  if (withCovers.length === 0) {
-    topStageBg.classList.add('hidden');
-    topStageBg.removeAttribute('src');
-    backdropGameId = null;
-    if (heroTitle) heroTitle.textContent = '';
-    return;
-  }
-
-  // Keep the current random pick if it's still in the library; otherwise choose a new random one
-  const stillPresent = withCovers.find(g => String(g.external_id) === String(backdropGameId));
-  let chosen = stillPresent;
-  if (!chosen) {
-    chosen = withCovers[Math.floor(Math.random() * withCovers.length)];
-    backdropGameId = chosen.external_id;
-  }
-
-  // Prefer a stored landscape backdrop. Steam games can derive their hero art directly
-  // from the AppID with no network lookup, so already-synced Steam games get a banner instantly.
-  let backdropUrl = chosen.backdrop_url && String(chosen.backdrop_url).trim() ? chosen.backdrop_url : null;
-  if (!backdropUrl && chosen.platform === 'Steam' && chosen.appid) {
-    backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${chosen.appid}/library_hero.jpg`;
-  }
-  topStageBg.onerror = () => {
-    if (topStageBg.dataset.fallback !== 'cover' && chosen.cover_url) {
-      topStageBg.dataset.fallback = 'cover';
-      topStageBg.src = chosen.cover_url;
-    } else {
-      topStageBg.classList.add('hidden');
-      topStageBg.onerror = null;
-    }
-  };
-  topStageBg.onload = () => topStageBg.classList.remove('hidden');
-  topStageBg.dataset.fallback = backdropUrl ? 'backdrop' : 'cover';
-  topStageBg.src = backdropUrl || chosen.cover_url;
-  if (heroTitle) heroTitle.textContent = chosen.name || '';
 }
 
 // Helper to replace image element with cover placeholder without wiping other components

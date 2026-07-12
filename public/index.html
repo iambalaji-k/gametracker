@@ -97,7 +97,8 @@
       <!-- Page-level cinematic backdrop — a background layer attached to the page,
            not a hero container. It extends beyond the viewport and melts away. -->
       <div class="backdrop-stage" aria-hidden="true">
-        <img class="page-backdrop" id="top-stage-bg" alt="">
+        <div class="backdrop-layer is-active" data-layer="0"><img class="backdrop-img" alt=""></div>
+        <div class="backdrop-layer" data-layer="1"><img class="backdrop-img" alt=""></div>
         <div class="page-scrim"></div>
       </div>
 
@@ -122,7 +123,6 @@
       <!-- Library Section -->
       <section class="library-section">
         <div class="section-header">
-          <span class="section-accent"></span>
         </div>
 
         <!-- Library Grid Controls -->
