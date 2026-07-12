@@ -359,6 +359,9 @@ const statTotalHours = document.getElementById('stat-total-hours');
 const statPlayedRatio = document.getElementById('stat-played-ratio');
 const statFavoriteGame = document.getElementById('stat-favorite-game');
 
+// Featured Hero Element
+const featuredHero = document.getElementById('featured-hero');
+
 // Initialize Application
 document.addEventListener('DOMContentLoaded', async () => {
   // Load configuration and data from localStorage
@@ -1579,8 +1582,7 @@ function renderGames() {
           `<img class="game-cover" 
                 src="${coverPath}" 
                 alt="${game.name}" 
-                loading="lazy"
-                onerror="handleCoverError(this, '${game.platform}', '${game.external_id}', '${game.name.replace(/'/g, "\\'")}')">`
+                loading="lazy">`
           :
           `<div class="cover-placeholder ${game.platform.toLowerCase()}">
              <i data-lucide="gamepad" class="placeholder-icon"></i>
@@ -1603,11 +1605,85 @@ function renderGames() {
       </div>
     `;
     
+    const coverImg = card.querySelector('.game-cover');
+    if (coverImg) {
+      coverImg.addEventListener('error', () => handleCoverError(coverImg, game.platform, game.external_id, game.name));
+    }
+    
     fragment.appendChild(card);
   });
 
   gamesGrid.appendChild(fragment);
   lucide.createIcons();
+  renderFeatured();
+}
+
+// Render the Featured Hero (Most Played game)
+function renderFeatured() {
+  if (!featuredHero) return;
+
+  // Hide the hero when browsing a filtered/search subset so it doesn't contradict the grid
+  if (appState.games.length === 0 || appState.filters !== 'all' || appState.searchQuery) {
+    featuredHero.classList.add('hidden');
+    featuredHero.innerHTML = '';
+    return;
+  }
+
+  // Pick the most-played game that has cover art; fall back to most recently played, then any
+  const withCovers = appState.games.filter(g => g.cover_url);
+  const pool = withCovers.length > 0 ? withCovers : appState.games;
+
+  const featured = pool.slice().sort((a, b) => {
+    if (b.playtime_forever !== a.playtime_forever) return b.playtime_forever - a.playtime_forever;
+    return b.rtime_last_played - a.rtime_last_played;
+  })[0];
+
+  if (!featured) {
+    featuredHero.classList.add('hidden');
+    return;
+  }
+
+  const playtimeHours = (featured.playtime_forever / 60).toFixed(1);
+  const playtimeText = featured.playtime_forever > 0 ? `${playtimeHours} hrs played` : 'Unplayed';
+  const lastPlayedText = featured.rtime_last_played
+    ? new Date(featured.rtime_last_played * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : 'Never played';
+  const platformClass = (featured.platform || 'other').toLowerCase();
+
+  featuredHero.innerHTML = `
+    <img class="featured-hero-bg" src="${featured.cover_url}" alt="" loading="lazy">
+    <div class="featured-hero-scrim"></div>
+    <div class="featured-hero-content">
+      <span class="featured-eyebrow"><i data-lucide="trophy"></i> Most Played</span>
+      <h2 class="featured-title">${featured.name}</h2>
+      <div class="featured-meta">
+        <span class="meta-item platform-chip ${platformClass}"><i data-lucide="monitor"></i> ${featured.platform}</span>
+        <span class="meta-item playtime"><i data-lucide="clock"></i> ${playtimeText}</span>
+        <span class="meta-item last-played"><i data-lucide="calendar"></i> ${lastPlayedText}</span>
+      </div>
+      <div class="featured-actions">
+        <button class="btn btn-primary" id="featured-browse-btn">
+          <i data-lucide="layout-grid"></i> Browse Library
+        </button>
+      </div>
+    </div>
+  `;
+
+  lucide.createIcons();
+
+  const heroBg = featuredHero.querySelector('.featured-hero-bg');
+  if (heroBg) {
+    heroBg.addEventListener('error', () => { heroBg.style.display = 'none'; });
+  }
+
+  const browseBtn = document.getElementById('featured-browse-btn');
+  if (browseBtn) {
+    browseBtn.addEventListener('click', () => {
+      gamesGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  featuredHero.classList.remove('hidden');
 }
 
 // Helper to replace image element with cover placeholder without wiping other components
