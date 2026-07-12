@@ -12,7 +12,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Supabase JS Client CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="style.css?v=2.6">
+  <link rel="stylesheet" href="style.css?v=2.8">
 </head>
 <body>
   <!-- Toast Notification Container -->
@@ -94,33 +94,30 @@
         </div>
       </header>
 
-      <!-- Top Stage (cinematic decorative hero backdrop) -->
-      <section class="top-stage" id="top-stage">
-        <img class="top-stage-bg" id="top-stage-bg" alt="" aria-hidden="true">
-        <div class="top-stage-scrim"></div>
-        <div class="top-stage-fade"></div>
-        <div class="top-stage-content">
-          <div class="hero-overlay">
-            <h2 class="hero-title" id="hero-title"></h2>
-            <div class="hero-stats" id="hero-stats">
-              <div class="hero-chip">
-                <i data-lucide="gamepad-2"></i>
-                <div class="hero-chip-text">
-                  <span id="stat-total-games">0</span>
-                  <small>Games</small>
-                </div>
-              </div>
-              <div class="hero-chip">
-                <i data-lucide="clock"></i>
-                <div class="hero-chip-text">
-                  <span id="stat-total-hours">0 hrs</span>
-                  <small>Playtime</small>
-                </div>
-              </div>
-            </div>
+      <!-- Page-level cinematic backdrop — a background layer attached to the page,
+           not a hero container. It extends beyond the viewport and melts away. -->
+      <div class="backdrop-stage" aria-hidden="true">
+        <img class="page-backdrop" id="top-stage-bg" alt="">
+        <div class="page-scrim"></div>
+      </div>
+
+      <!-- Intro content floats in the normal document flow over the backdrop.
+           No container, no panel, no box. -->
+      <div class="hero-intro">
+        <h2 class="hero-title" id="hero-title"></h2>
+        <div class="hero-stats" id="hero-stats">
+          <div class="hero-stat">
+            <i data-lucide="gamepad-2"></i>
+            <span class="hero-stat-value" id="stat-total-games">0</span>
+            <span class="hero-stat-label">Games</span>
+          </div>
+          <div class="hero-stat">
+            <i data-lucide="clock"></i>
+            <span class="hero-stat-value" id="stat-total-hours">0 hrs</span>
+            <span class="hero-stat-label">Playtime</span>
           </div>
         </div>
-      </section>
+      </div>
 
       <!-- Library Section -->
       <section class="library-section">
