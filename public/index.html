@@ -174,223 +174,252 @@
 
       <!-- Settings Page -->
       <div id="settings-view" class="settings-page hidden">
-        <div class="settings-header">
-          <h2><i data-lucide="settings" class="settings-title-icon"></i> Configurations</h2>
+        <div class="settings-header-container">
+          <div class="settings-header">
+            <h2><i data-lucide="settings" class="settings-title-icon"></i> Configurations</h2>
+          </div>
+          <p class="settings-subtitle">Manage your connected accounts, sync preferences, and maintain database integrity.</p>
         </div>
 
-        <div class="settings-body">
-        
-        <!-- Steam Configuration -->
-        <div class="settings-section">
-          <h3><i data-lucide="steam" class="inline-icon"></i> Steam Integration</h3>
-          <p class="section-desc">Enter your Steam ID or Vanity URL to import your Steam game library.</p>
-          
-          <div class="form-group">
-            <label for="steam-identifier">Steam Custom Vanity URL or 17-digit Steam ID</label>
-            <div class="input-with-button">
-              <input type="text" id="steam-identifier" placeholder="e.g. gaben or 76561197960287930">
-              <button class="btn btn-secondary" id="save-steam-btn">Apply</button>
-            </div>
-            <p class="help-text">
-              <i data-lucide="info" class="tiny-icon"></i> Make sure your Steam Privacy settings for <strong>Game Details</strong> are set to <strong>Public</strong>.
-            </p>
-          </div>
-          
-          <div class="profile-resolved-card hidden" id="resolved-profile-card">
-            <div class="profile-avatar-placeholder">
-              <i data-lucide="user"></i>
-            </div>
-            <div class="profile-info">
-              <h4 id="resolved-name">Steam Account</h4>
-              <p id="resolved-id" class="help-text">ID: 7656119XXXXXXXXXX</p>
-            </div>
-            <div class="profile-status-badge">Ready</div>
-          </div>
-        </div>
-
-        <hr class="settings-divider">
-
-        <!-- GOG Configuration -->
-        <div class="settings-section">
-          <h3><i data-lucide="gamepad" class="inline-icon"></i> GOG Integration</h3>
-          <p class="section-desc">Enter your GOG username to import your GOG library (e.g. balajikalidasan28_).</p>
-          
-          <div class="form-group">
-            <label for="gog-username">GOG Profile Username</label>
-            <div class="input-with-button">
-              <input type="text" id="gog-username" placeholder="e.g. balajikalidasan28_">
-              <button class="btn btn-secondary" id="save-gog-btn">Apply</button>
-            </div>
-            <p class="help-text">
-              <i data-lucide="info" class="tiny-icon"></i> Make sure your GOG Privacy settings for <strong>Profile & Games Library</strong> are set to <strong>Public (All visitors)</strong>.
-            </p>
-          </div>
-          
-          <div class="profile-resolved-card hidden" id="resolved-gog-card">
-            <div class="profile-avatar-placeholder" style="background-color: hsla(280, 89%, 66%, 0.1); border-color: rgba(168, 85, 247, 0.3); color: hsl(280, 89%, 66%);">
-              <i data-lucide="user"></i>
-            </div>
-            <div class="profile-info">
-              <h4 id="resolved-gog-name">GOG Account</h4>
-              <p id="resolved-gog-id" class="help-text">Username: balajikalidasan28_</p>
-            </div>
-            <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
-          </div>
-        </div>
-
-        <hr class="settings-divider">
-
-        <!-- Epic Games Configuration -->
-        <div class="settings-section">
-          <h3><i data-lucide="gamepad-2" class="inline-icon" style="color: var(--color-secondary);"></i> Epic Games Integration</h3>
-          <p class="section-desc">Epic Games does not have public profiles. Follow these secure steps to import your games:</p>
-          
-          <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
-            <p><strong>Instructions:</strong></p>
-            <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
-              <li>Log into <a href="https://www.epicgames.com/account/transactions" target="_blank" style="color: var(--color-secondary); text-decoration: underline;">Epic Transactions Page</a>.</li>
-              <li>Press <strong>F12</strong> to open the developer tools console.</li>
-              <li>Click **Copy Extractor Script** below, paste it into the console, and press **Enter**.</li>
-              <li>Once finished, copy the generated JSON text, paste it into the input box below, and click **Import**.</li>
-            </ol>
-          </div>
-
-          <div class="form-group">
-            <button class="btn btn-secondary" id="copy-epic-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
-              <i data-lucide="copy" class="inline-icon"></i> Copy Extractor Script
+        <div class="settings-layout">
+          <!-- Left Navigation Sidebar -->
+          <aside class="settings-nav">
+            <button class="settings-nav-item active" data-target-tab="accounts">
+              <i data-lucide="link"></i>
+              <span>Account Sync</span>
             </button>
-            
-            <label for="epic-json-input">Paste Extracted Epic Games JSON:</label>
-            <textarea id="epic-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Control", ...}]'></textarea>
-          </div>
-
-          <button class="btn btn-secondary" id="import-epic-btn" style="width: 100%; background-color: hsla(190, 90%, 50%, 0.08); border-color: rgba(0, 242, 254, 0.25); color: var(--color-secondary);">
-            <i data-lucide="file-input" class="inline-icon"></i> Import Epic Games Library
-          </button>
-
-          <div class="profile-resolved-card hidden" id="resolved-epic-card">
-            <div class="profile-avatar-placeholder" style="background-color: hsla(190, 90%, 50%, 0.1); border-color: rgba(0, 242, 254, 0.3); color: var(--color-secondary);">
-              <i data-lucide="user"></i>
-            </div>
-            <div class="profile-info">
-              <h4 id="resolved-epic-name">Epic Games Account</h4>
-              <p id="resolved-epic-id" class="help-text">Sync Status: Synced Successfully</p>
-            </div>
-            <div class="profile-status-badge" style="background-color: hsla(190, 90%, 50%, 0.15); color: var(--color-secondary); border-color: rgba(0, 242, 254, 0.2);">Ready</div>
-          </div>
-        </div>
-
-        <hr class="settings-divider">
-
-        <!-- Legacy Games Configuration -->
-        <div class="settings-section">
-          <h3><i data-lucide="gamepad" class="inline-icon" style="color: #f6ad55;"></i> Legacy Games Integration</h3>
-          <p class="section-desc">Legacy Games manages purchases inside their account portal. Follow these steps to import:</p>
-          
-          <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
-            <p><strong>Instructions:</strong></p>
-            <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
-              <li>Log into Legacy Games <a href="https://legacygames.com/my-account/downloads/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Downloads</a> or <a href="https://legacygames.com/my-account/free-games/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Free Games</a>.</li>
-              <li>Press <strong>F12</strong> to open the developer tools console.</li>
-              <li>Click **Copy Legacy Extractor Script** below, paste it in the console, and press **Enter**.</li>
-              <li>Copy the generated JSON output, paste it below, and click **Import**.</li>
-            </ol>
-          </div>
-
-          <div class="form-group">
-            <button class="btn btn-secondary" id="copy-legacy-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
-              <i data-lucide="copy" class="inline-icon"></i> Copy Legacy Extractor Script
+            <button class="settings-nav-item" data-target-tab="scripts">
+              <i data-lucide="terminal"></i>
+              <span>Console Imports</span>
             </button>
-            
-            <label for="legacy-json-input">Paste Extracted Legacy Games JSON:</label>
-            <textarea id="legacy-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Sifu", ...}]'></textarea>
-          </div>
+            <button class="settings-nav-item" data-target-tab="cloud">
+              <i data-lucide="cloud"></i>
+              <span>Database & Cloud</span>
+            </button>
+            <button class="settings-nav-item" data-target-tab="maintenance">
+              <i data-lucide="wrench"></i>
+              <span>Maintenance Tools</span>
+            </button>
+          </aside>
 
-          <button class="btn btn-secondary" id="import-legacy-btn" style="width: 100%; background-color: rgba(246, 173, 85, 0.08); border-color: rgba(246, 173, 85, 0.25); color: #f6ad55;">
-            <i data-lucide="file-input" class="inline-icon"></i> Import Legacy Games Library
-          </button>
-
-          <div class="profile-resolved-card hidden" id="resolved-legacy-card">
-            <div class="profile-avatar-placeholder" style="background-color: rgba(246, 173, 85, 0.1); border-color: rgba(246, 173, 85, 0.3); color: #f6ad55;">
-              <i data-lucide="user"></i>
-            </div>
-            <div class="profile-info">
-              <h4 id="resolved-legacy-name">Legacy Games Account</h4>
-              <p id="resolved-legacy-id" class="help-text">Sync Status: Synced Successfully</p>
-            </div>
-            <div class="profile-status-badge" style="background-color: rgba(246, 173, 85, 0.15); color: #f6ad55; border-color: rgba(246, 173, 85, 0.2);">Ready</div>
-          </div>
-        </div>
-
-
-
-        <!-- Supabase Configuration -->
-        <div class="settings-section">
-          <h3><i data-lucide="cloud" class="inline-icon"></i> Supabase Integration (Production Sync)</h3>
-          <p class="section-desc">Toggle the cloud storage. Once keys are configured, data will automatically sync to Supabase when running imports.</p>
-          
-          <div class="form-group toggle-group">
-            <label for="supabase-toggle">Enable Supabase Sync</label>
-            <label class="switch">
-              <input type="checkbox" id="supabase-toggle">
-              <span class="slider round"></span>
-            </label>
-          </div>
-
-          <div id="supabase-fields" class="supabase-fields hidden">
-            <div class="form-group">
-              <label for="supabase-url">Supabase URL</label>
-              <input type="text" id="supabase-url" placeholder="https://your-project.supabase.co">
-            </div>
-
-            <div class="form-group">
-              <label for="supabase-anon-key">Supabase Anon Key</label>
-              <input type="password" id="supabase-anon-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
-            </div>
-
-            <button class="btn btn-secondary" id="save-supabase-btn">Save & Test Connection</button>
-          </div>
-        </div>
-
-        <!-- IGDB Configuration Status -->
-        <div class="settings-section">
-          <h3><i data-lucide="key" class="inline-icon" style="color: #a78bfa;"></i> IGDB API Status</h3>
-          <p class="section-desc">Twitch Developer credentials used for IGDB fallback game search and cover resolution are loaded from your local <code class="highlight-code">.env</code> file.</p>
-          <div class="form-group">
-            <div id="igdb-env-status" class="profile-resolved-card" style="margin-top: 0.5rem; background: var(--bg-glass); border: 1px solid var(--border-glass);">
-              <div class="profile-avatar-placeholder" id="igdb-status-avatar" style="background-color: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa;">
-                <i data-lucide="shield-alert" id="igdb-status-icon"></i>
+          <!-- Right Content Area -->
+          <div class="settings-content">
+            <!-- Account Sync Tab -->
+            <div class="settings-tab-pane active" id="tab-accounts">
+              <!-- Steam Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="steam" class="inline-icon"></i> Steam Integration</h3>
+                <p class="section-desc">Enter your Steam ID or Vanity URL to import your Steam game library.</p>
+                
+                <div class="form-group">
+                  <label for="steam-identifier">Steam Custom Vanity URL or 17-digit Steam ID</label>
+                  <div class="input-with-button">
+                    <input type="text" id="steam-identifier" placeholder="e.g. gaben or 76561197960287930">
+                    <button class="btn btn-secondary" id="save-steam-btn">Apply</button>
+                  </div>
+                  <p class="help-text">
+                    <i data-lucide="info" class="tiny-icon"></i> Make sure your Steam Privacy settings for <strong>Game Details</strong> are set to <strong>Public</strong>.
+                  </p>
+                </div>
+                
+                <div class="profile-resolved-card hidden" id="resolved-profile-card">
+                  <div class="profile-avatar-placeholder">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-name">Steam Account</h4>
+                    <p id="resolved-id" class="help-text">ID: 7656119XXXXXXXXXX</p>
+                  </div>
+                  <div class="profile-status-badge">Ready</div>
+                </div>
               </div>
-              <div class="profile-info">
-                <h4>IGDB Search Integration</h4>
-                <p id="igdb-env-text" class="help-text">Checking credentials status...</p>
+
+              <!-- GOG Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="gamepad" class="inline-icon"></i> GOG Integration</h3>
+                <p class="section-desc">Enter your GOG username to import your GOG library (e.g. balajikalidasan28_).</p>
+                
+                <div class="form-group">
+                  <label for="gog-username">GOG Profile Username</label>
+                  <div class="input-with-button">
+                    <input type="text" id="gog-username" placeholder="e.g. balajikalidasan28_">
+                    <button class="btn btn-secondary" id="save-gog-btn">Apply</button>
+                  </div>
+                  <p class="help-text">
+                    <i data-lucide="info" class="tiny-icon"></i> Make sure your GOG Privacy settings for <strong>Profile & Games Library</strong> are set to <strong>Public (All visitors)</strong>.
+                  </p>
+                </div>
+                
+                <div class="profile-resolved-card hidden" id="resolved-gog-card">
+                  <div class="profile-avatar-placeholder" style="background-color: hsla(280, 89%, 66%, 0.1); border-color: rgba(168, 85, 247, 0.3); color: hsl(280, 89%, 66%);">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-gog-name">GOG Account</h4>
+                    <p id="resolved-gog-id" class="help-text">Username: balajikalidasan28_</p>
+                  </div>
+                  <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
+                </div>
               </div>
-              <div class="profile-status-badge" id="igdb-status-badge" style="background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">Offline</div>
+            </div>
+
+            <!-- Console Imports Tab -->
+            <div class="settings-tab-pane" id="tab-scripts">
+              <!-- Epic Games Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="gamepad-2" class="inline-icon" style="color: var(--color-secondary);"></i> Epic Games Integration</h3>
+                <p class="section-desc">Epic Games does not have public profiles. Follow these secure steps to import your games:</p>
+                
+                <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
+                  <p><strong>Instructions:</strong></p>
+                  <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
+                    <li>Log into <a href="https://www.epicgames.com/account/transactions" target="_blank" style="color: var(--color-secondary); text-decoration: underline;">Epic Transactions Page</a>.</li>
+                    <li>Press <strong>F12</strong> to open the developer tools console.</li>
+                    <li>Click **Copy Extractor Script** below, paste it into the console, and press **Enter**.</li>
+                    <li>Once finished, copy the generated JSON text, paste it into the input box below, and click **Import**.</li>
+                  </ol>
+                </div>
+
+                <div class="form-group">
+                  <button class="btn btn-secondary" id="copy-epic-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
+                    <i data-lucide="copy" class="inline-icon"></i> Copy Extractor Script
+                  </button>
+                  
+                  <label for="epic-json-input">Paste Extracted Epic Games JSON:</label>
+                  <textarea id="epic-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Control", ...}]'></textarea>
+                </div>
+
+                <button class="btn btn-secondary" id="import-epic-btn" style="width: 100%; background-color: hsla(190, 90%, 50%, 0.08); border-color: rgba(0, 242, 254, 0.25); color: var(--color-secondary);">
+                  <i data-lucide="file-input" class="inline-icon"></i> Import Epic Games Library
+                </button>
+
+                <div class="profile-resolved-card hidden" id="resolved-epic-card">
+                  <div class="profile-avatar-placeholder" style="background-color: hsla(190, 90%, 50%, 0.1); border-color: rgba(0, 242, 254, 0.3); color: var(--color-secondary);">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-epic-name">Epic Games Account</h4>
+                    <p id="resolved-epic-id" class="help-text">Sync Status: Synced Successfully</p>
+                  </div>
+                  <div class="profile-status-badge" style="background-color: hsla(190, 90%, 50%, 0.15); color: var(--color-secondary); border-color: rgba(0, 242, 254, 0.2);">Ready</div>
+                </div>
+              </div>
+
+              <!-- Legacy Games Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="gamepad" class="inline-icon" style="color: #f6ad55;"></i> Legacy Games Integration</h3>
+                <p class="section-desc">Legacy Games manages purchases inside their account portal. Follow these steps to import:</p>
+                
+                <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
+                  <p><strong>Instructions:</strong></p>
+                  <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
+                    <li>Log into Legacy Games <a href="https://legacygames.com/my-account/downloads/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Downloads</a> or <a href="https://legacygames.com/my-account/free-games/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Free Games</a>.</li>
+                    <li>Press <strong>F12</strong> to open the developer tools console.</li>
+                    <li>Click **Copy Legacy Extractor Script** below, paste it in the console, and press **Enter**.</li>
+                    <li>Copy the generated JSON output, paste it below, and click **Import**.</li>
+                  </ol>
+                </div>
+
+                <div class="form-group">
+                  <button class="btn btn-secondary" id="copy-legacy-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
+                    <i data-lucide="copy" class="inline-icon"></i> Copy Legacy Extractor Script
+                  </button>
+                  
+                  <label for="legacy-json-input">Paste Extracted Legacy Games JSON:</label>
+                  <textarea id="legacy-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Sifu", ...}]'></textarea>
+                </div>
+
+                <button class="btn btn-secondary" id="import-legacy-btn" style="width: 100%; background-color: rgba(246, 173, 85, 0.08); border-color: rgba(246, 173, 85, 0.25); color: #f6ad55;">
+                  <i data-lucide="file-input" class="inline-icon"></i> Import Legacy Games Library
+                </button>
+
+                <div class="profile-resolved-card hidden" id="resolved-legacy-card">
+                  <div class="profile-avatar-placeholder" style="background-color: rgba(246, 173, 85, 0.1); border-color: rgba(246, 173, 85, 0.3); color: #f6ad55;">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-legacy-name">Legacy Games Account</h4>
+                    <p id="resolved-legacy-id" class="help-text">Sync Status: Synced Successfully</p>
+                  </div>
+                  <div class="profile-status-badge" style="background-color: rgba(246, 173, 85, 0.15); color: #f6ad55; border-color: rgba(246, 173, 85, 0.2);">Ready</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Database & Cloud Tab -->
+            <div class="settings-tab-pane" id="tab-cloud">
+              <!-- Supabase Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="cloud" class="inline-icon"></i> Supabase Integration (Production Sync)</h3>
+                <p class="section-desc">Toggle the cloud storage. Once keys are configured, data will automatically sync to Supabase when running imports.</p>
+                
+                <div class="form-group toggle-group">
+                  <label for="supabase-toggle">Enable Supabase Sync</label>
+                  <label class="switch">
+                    <input type="checkbox" id="supabase-toggle">
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+
+                <div id="supabase-fields" class="supabase-fields hidden">
+                  <div class="form-group">
+                    <label for="supabase-url">Supabase URL</label>
+                    <input type="text" id="supabase-url" placeholder="https://your-project.supabase.co">
+                  </div>
+
+                  <div class="form-group">
+                    <label for="supabase-anon-key">Supabase Anon Key</label>
+                    <input type="password" id="supabase-anon-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+                  </div>
+
+                  <button class="btn btn-secondary" id="save-supabase-btn">Save & Test Connection</button>
+                </div>
+              </div>
+
+              <!-- IGDB Configuration Status -->
+              <div class="settings-section">
+                <h3><i data-lucide="key" class="inline-icon" style="color: #a78bfa;"></i> IGDB API Status</h3>
+                <p class="section-desc">Twitch Developer credentials used for IGDB fallback game search and cover resolution are loaded from your local <code class="highlight-code">.env</code> file.</p>
+                <div class="form-group">
+                  <div id="igdb-env-status" class="profile-resolved-card" style="margin-top: 0.5rem; background: var(--bg-glass); border: 1px solid var(--border-glass);">
+                    <div class="profile-avatar-placeholder" id="igdb-status-avatar" style="background-color: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa;">
+                      <i data-lucide="shield-alert" id="igdb-status-icon"></i>
+                    </div>
+                    <div class="profile-info">
+                      <h4>IGDB Search Integration</h4>
+                      <p id="igdb-env-text" class="help-text">Checking credentials status...</p>
+                    </div>
+                    <div class="profile-status-badge" id="igdb-status-badge" style="background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">Offline</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Help Info -->
+              <div class="settings-section help-section">
+                <h4>Need help?</h4>
+                <p>For Supabase setup, you need to execute the schema in your project's SQL editor. The schema definitions are stored in <code class="highlight-code">schema.sql</code> inside the project root.</p>
+              </div>
+            </div>
+
+            <!-- Maintenance Tools Tab -->
+            <div class="settings-tab-pane" id="tab-maintenance">
+              <!-- Library Maintenance Tools -->
+              <div class="settings-section">
+                <h3><i data-lucide="wrench" class="inline-icon" style="color: #10b981;"></i> Library Maintenance</h3>
+                <p class="section-desc">Utility actions to update and clean up your games collection.</p>
+                <button class="btn btn-secondary" id="resolve-covers-btn" style="width: 100%; border-color: rgba(16, 185, 129, 0.3); color: #10b981; background-color: rgba(16, 185, 129, 0.05); transition: all 0.2s ease;">
+                  <i data-lucide="image-down" class="inline-icon"></i> Scan & Resolve Missing Covers
+                </button>
+                <button class="btn btn-secondary" id="resolve-gog-covers-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary); background-color: rgba(168, 85, 247, 0.05); transition: all 0.2s ease;">
+                  <i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)
+                </button>
+                <button class="btn btn-secondary" id="refresh-artwork-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(99, 179, 237, 0.3); color: #63b3ed; background-color: rgba(99, 179, 237, 0.05); transition: all 0.2s ease;">
+                  <i data-lucide="image" class="inline-icon"></i> Refresh Artwork & Backdrops
+                </button>
+              </div>
             </div>
           </div>
         </div>
-
-        <!-- Library Maintenance Tools -->
-        <div class="settings-section">
-          <h3><i data-lucide="wrench" class="inline-icon" style="color: #10b981;"></i> Library Maintenance</h3>
-          <p class="section-desc">Utility actions to update and clean up your games collection.</p>
-          <button class="btn btn-secondary" id="resolve-covers-btn" style="width: 100%; border-color: rgba(16, 185, 129, 0.3); color: #10b981; background-color: rgba(16, 185, 129, 0.05); transition: all 0.2s ease;">
-            <i data-lucide="image-down" class="inline-icon"></i> Scan & Resolve Missing Covers
-          </button>
-          <button class="btn btn-secondary" id="resolve-gog-covers-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary); background-color: rgba(168, 85, 247, 0.05); transition: all 0.2s ease;">
-            <i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)
-          </button>
-          <button class="btn btn-secondary" id="refresh-artwork-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(99, 179, 237, 0.3); color: #63b3ed; background-color: rgba(99, 179, 237, 0.05); transition: all 0.2s ease;">
-            <i data-lucide="image" class="inline-icon"></i> Refresh Artwork & Backdrops
-          </button>
-        </div>
-
-        <!-- Help Info -->
-        <div class="settings-section help-section">
-          <h4>Need help?</h4>
-          <p>For Supabase setup, you need to execute the schema in your project's SQL editor. The schema definitions are stored in <code class="highlight-code">schema.sql</code> inside the project root.</p>
-        </div>
-
       </div>
     </div>
   </main>

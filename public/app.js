@@ -761,6 +761,30 @@ function setupEventListeners() {
     showPage('settings');
   });
 
+  // Settings Tab Switching
+  const settingsNavItems = document.querySelectorAll('.settings-nav-item');
+  const settingsTabPanes = document.querySelectorAll('.settings-tab-pane');
+
+  settingsNavItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const targetTab = item.getAttribute('data-target-tab');
+      
+      // Update active nav item
+      settingsNavItems.forEach(nav => nav.classList.remove('active'));
+      item.classList.add('active');
+
+      // Show target tab pane, hide others
+      settingsTabPanes.forEach(pane => {
+        if (pane.id === `tab-${targetTab}`) {
+          pane.classList.add('active');
+        } else {
+          pane.classList.remove('active');
+        }
+      });
+    });
+  });
+
+
   // Add Game Modal navigation
   addGameBtn.addEventListener('click', (e) => {
     e.preventDefault();
