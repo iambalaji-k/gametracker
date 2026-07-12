@@ -12,7 +12,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Supabase JS Client CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="style.css?v=1.2">
+  <link rel="stylesheet" href="style.css?v=2.6">
 </head>
 <body>
   <!-- Toast Notification Container -->
@@ -57,87 +57,74 @@
     <!-- Main Content Area -->
     <main class="main-content">
       <div id="library-view">
-      <!-- Page Header -->
-      <header class="page-header">
-        <div class="page-header-text">
-          <h1 class="page-title">Game Library</h1>
-          <p class="page-subtitle">Your unified PC collection</p>
+      <!-- Top Navigation Bar -->
+      <header class="top-navbar">
+        <div class="navbar-left">
+          <nav class="navbar-links">
+            <a href="#" class="navbar-link active" data-nav="library">Library</a>
+            <a href="#" class="navbar-link" data-nav="collections">Collections</a>
+          </nav>
         </div>
-      </header>
-
-      <!-- Top Action Bar -->
-      <header class="top-bar">
-        <div class="search-box">
-          <i data-lucide="search" class="search-icon"></i>
-          <input type="text" id="search-input" placeholder="Search library...">
-        </div>
-        
-        <div class="profile-actions" style="display: flex; gap: 0.75rem;">
-          <button class="btn btn-secondary" id="add-game-btn" style="background-color: var(--bg-glass-active); border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary);">
+        <div class="navbar-right">
+          <div class="search-box">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="search-input" placeholder="Search library...">
+          </div>
+          <button class="btn btn-secondary" id="add-game-btn">
             <i data-lucide="plus"></i>
             <span>Add Game</span>
           </button>
-          <button class="btn btn-secondary" id="sync-gog-btn">
-            <i data-lucide="refresh-cw" id="sync-gog-icon"></i>
-            <span>Sync GOG</span>
-          </button>
-          <button class="btn btn-primary" id="sync-steam-btn">
-            <i data-lucide="refresh-cw" id="sync-icon"></i>
-            <span>Sync Steam</span>
-          </button>
+          <div class="sync-group">
+            <button class="btn btn-primary sync-main" id="sync-all-btn">
+              <i data-lucide="refresh-cw" id="sync-all-icon"></i>
+              <span>Sync Library</span>
+            </button>
+            <button class="btn btn-primary sync-caret" id="sync-dropdown-toggle" title="Sync a single platform" aria-haspopup="true" aria-expanded="false">
+              <i data-lucide="chevron-down"></i>
+            </button>
+            <div class="sync-menu hidden" id="sync-menu" role="menu">
+              <button class="sync-menu-item" data-sync="steam" role="menuitem">
+                <i data-lucide="steam"></i><span>Sync Steam</span>
+              </button>
+              <button class="sync-menu-item" data-sync="gog" role="menuitem">
+                <i data-lucide="gamepad-2"></i><span>Sync GOG</span>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
-      <!-- Dashboard Stats Summary -->
-      <section class="stats-summary" id="stats-summary-sec">
-        <div class="stat-card">
-          <div class="stat-icon-wrapper purple">
-            <i data-lucide="play-circle"></i>
-          </div>
-          <div class="stat-info">
-            <h3 id="stat-total-games">0</h3>
-            <p>Total Games</p>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon-wrapper blue">
-            <i data-lucide="clock"></i>
-          </div>
-          <div class="stat-info">
-            <h3 id="stat-total-hours">0 hrs</h3>
-            <p>Playtime Accumulated</p>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon-wrapper green">
-            <i data-lucide="trending-up"></i>
-          </div>
-          <div class="stat-info">
-            <h3 id="stat-played-ratio">0%</h3>
-            <p>Completion / Played</p>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon-wrapper pink">
-            <i data-lucide="crown"></i>
-          </div>
-          <div class="stat-info">
-            <h3 id="stat-favorite-game" class="truncate">None</h3>
-            <p>Most Played Game</p>
+      <!-- Top Stage (cinematic decorative hero backdrop) -->
+      <section class="top-stage" id="top-stage">
+        <img class="top-stage-bg" id="top-stage-bg" alt="" aria-hidden="true">
+        <div class="top-stage-scrim"></div>
+        <div class="top-stage-fade"></div>
+        <div class="top-stage-content">
+          <div class="hero-overlay">
+            <h2 class="hero-title" id="hero-title"></h2>
+            <div class="hero-stats" id="hero-stats">
+              <div class="hero-chip">
+                <i data-lucide="gamepad-2"></i>
+                <div class="hero-chip-text">
+                  <span id="stat-total-games">0</span>
+                  <small>Games</small>
+                </div>
+              </div>
+              <div class="hero-chip">
+                <i data-lucide="clock"></i>
+                <div class="hero-chip-text">
+                  <span id="stat-total-hours">0 hrs</span>
+                  <small>Playtime</small>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- Featured Hero (Most Played) -->
-      <section class="featured-hero hidden" id="featured-hero"></section>
-
       <!-- Library Section -->
       <section class="library-section">
         <div class="section-header">
-          <h2 class="section-title">Your Library</h2>
           <span class="section-accent"></span>
         </div>
 
@@ -153,7 +140,7 @@
         </div>
 
         <div class="sort-options">
-          <label for="sort-select"><i data-lucide="sliders-horizontal" class="inline-icon"></i> Sort by</label>
+          <label for="sort-select"><i data-lucide="sliders-horizontal" class="inline-icon"></i></label>
           <select id="sort-select" class="styled-select">
             <option value="playtime-desc">Most Played</option>
             <option value="playtime-asc">Least Played</option>
@@ -394,6 +381,9 @@
           <button class="btn btn-secondary" id="resolve-gog-covers-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary); background-color: rgba(168, 85, 247, 0.05); transition: all 0.2s ease;">
             <i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)
           </button>
+          <button class="btn btn-secondary" id="refresh-artwork-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(99, 179, 237, 0.3); color: #63b3ed; background-color: rgba(99, 179, 237, 0.05); transition: all 0.2s ease;">
+            <i data-lucide="image" class="inline-icon"></i> Refresh Artwork & Backdrops
+          </button>
         </div>
 
         <!-- Help Info -->
@@ -490,6 +480,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=1.2"></script>
+  <script src="app.js?v=1.9"></script>
 </body>
 </html>

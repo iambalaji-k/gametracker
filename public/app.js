@@ -285,10 +285,10 @@ const sidebar = document.getElementById('sidebar');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 
 // Sync Buttons
-const syncSteamBtn = document.getElementById('sync-steam-btn');
-const syncIcon = document.getElementById('sync-icon');
-const syncGogBtn = document.getElementById('sync-gog-btn');
-const syncGogIcon = document.getElementById('sync-gog-icon');
+const syncAllBtn = document.getElementById('sync-all-btn');
+const syncAllIcon = document.getElementById('sync-all-icon');
+const syncDropdownToggle = document.getElementById('sync-dropdown-toggle');
+const syncMenu = document.getElementById('sync-menu');
 
 // Connection Status
 const connectionStatus = document.getElementById('connection-status');
@@ -352,15 +352,18 @@ const supabaseAnonKeyInput = document.getElementById('supabase-anon-key');
 const saveSupabaseBtn = document.getElementById('save-supabase-btn');
 const resolveCoversBtn = document.getElementById('resolve-covers-btn');
 const resolveGogCoversBtn = document.getElementById('resolve-gog-covers-btn');
+const refreshArtworkBtn = document.getElementById('refresh-artwork-btn');
 
 // Stats Elements
 const statTotalGames = document.getElementById('stat-total-games');
 const statTotalHours = document.getElementById('stat-total-hours');
-const statPlayedRatio = document.getElementById('stat-played-ratio');
-const statFavoriteGame = document.getElementById('stat-favorite-game');
 
-// Featured Hero Element
-const featuredHero = document.getElementById('featured-hero');
+// Top Stage Backdrop Element
+const topStageBg = document.getElementById('top-stage-bg');
+let backdropGameId = null;
+if (topStageBg) {
+  topStageBg.addEventListener('error', () => topStageBg.classList.add('hidden'));
+}
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', async () => {
@@ -537,6 +540,23 @@ function setupEventListeners() {
     });
   });
 
+  // Top navbar links
+  document.querySelectorAll('.navbar-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const nav = link.dataset.nav;
+      document.querySelectorAll('.navbar-link').forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+
+      if (nav === 'library') {
+        showPage('library');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        showToast(`${link.textContent.trim()} is coming soon`, 'info');
+      }
+    });
+  });
+
   // Steam config save
   saveSteamBtn.addEventListener('click', async () => {
     const inputVal = steamIdentifierInput.value.trim();
@@ -655,6 +675,9 @@ function setupEventListeners() {
               if (coverData.cover_url) {
                 game.cover_url = coverData.cover_url;
               }
+              if (coverData.backdrop_url) {
+                game.backdrop_url = coverData.backdrop_url;
+              }
             }
           } catch (e) {
             console.error(`Failed to resolve cover for ${game.name}:`, e);
@@ -745,6 +768,9 @@ function setupEventListeners() {
               const coverData = await res.json();
               if (coverData.cover_url) {
                 game.cover_url = coverData.cover_url;
+              }
+              if (coverData.backdrop_url) {
+                game.backdrop_url = coverData.backdrop_url;
               }
             }
           } catch (e) {
@@ -838,9 +864,27 @@ function setupEventListeners() {
     }
   });
 
-  // Platform Sync triggers
-  syncSteamBtn.addEventListener('click', syncSteamLibrary);
-  syncGogBtn.addEventListener('click', syncGogLibrary);
+  // Platform Sync triggers (merged button syncs both; dropdown syncs individually)
+  syncAllBtn.addEventListener('click', () => triggerSync(['Steam', 'GOG']));
+  syncDropdownToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = syncMenu.classList.toggle('hidden');
+    syncDropdownToggle.setAttribute('aria-expanded', String(!isHidden));
+  });
+  syncMenu.querySelectorAll('.sync-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const platform = item.dataset.sync;
+      syncMenu.classList.add('hidden');
+      syncDropdownToggle.setAttribute('aria-expanded', 'false');
+      triggerSync([platform]);
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!syncMenu.contains(e.target) && e.target !== syncDropdownToggle && !syncDropdownToggle.contains(e.target)) {
+      syncMenu.classList.add('hidden');
+      syncDropdownToggle.setAttribute('aria-expanded', 'false');
+    }
+  });
 
   // Toggle custom platform input visibility
   manualPlatformInput.addEventListener('change', () => {
@@ -1056,6 +1100,10 @@ function setupEventListeners() {
               game.cover_url = data.cover_url;
               resolvedCount++;
               
+              if (data.backdrop_url) {
+                game.backdrop_url = data.backdrop_url;
+              }
+              
               if (appState.supabaseConfig.enabled && supabaseClient) {
                 const row = {
                   external_id: String(game.external_id),
@@ -1063,7 +1111,8 @@ function setupEventListeners() {
                   title: game.name,
                   playtime_forever: game.playtime_forever,
                   last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-                  cover_url: game.cover_url
+                  cover_url: game.cover_url,
+                  backdrop_url: game.backdrop_url || null
                 };
                 await supabaseClient
                   .from('games')
@@ -1118,6 +1167,10 @@ function setupEventListeners() {
               game.cover_url = data.cover_url;
               resolvedCount++;
               
+              if (data.backdrop_url) {
+                game.backdrop_url = data.backdrop_url;
+              }
+              
               if (appState.supabaseConfig.enabled && supabaseClient) {
                 const row = {
                   external_id: String(game.external_id),
@@ -1125,7 +1178,8 @@ function setupEventListeners() {
                   title: game.name,
                   playtime_forever: game.playtime_forever,
                   last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-                  cover_url: game.cover_url
+                  cover_url: game.cover_url,
+                  backdrop_url: game.backdrop_url || null
                 };
                 await supabaseClient
                   .from('games')
@@ -1151,6 +1205,85 @@ function setupEventListeners() {
       showToast(`Successfully upgraded cover art for ${resolvedCount} GOG games!`, 'success');
     } else {
       showToast('Could not find vertical cover art for any GOG games.', 'info');
+    }
+  });
+
+  // Refresh Artwork & Backdrops: populate backdrop_url (and missing covers) for ALL games
+  // without a full resync. Steam derives its hero art directly from the AppID (no network);
+  // other platforms resolve via Steam/IGDB search.
+  refreshArtworkBtn.addEventListener('click', async () => {
+    if (appState.games.length === 0) {
+      showToast('Your library is empty. Sync a platform first!', 'info');
+      return;
+    }
+
+    refreshArtworkBtn.disabled = true;
+    refreshArtworkBtn.innerHTML = '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Refreshing artwork...';
+    lucide.createIcons();
+    showToast(`Refreshing artwork & backdrops for ${appState.games.length} games...`, 'info');
+
+    let resolvedCount = 0;
+    const batchSize = 10;
+    for (let i = 0; i < appState.games.length; i += batchSize) {
+      const batch = appState.games.slice(i, i + batchSize);
+      await Promise.all(batch.map(async game => {
+        try {
+          if (game.platform === 'Steam' && game.appid) {
+            const heroUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/library_hero.jpg`;
+            if (!game.backdrop_url || String(game.backdrop_url).trim() !== heroUrl) {
+              game.backdrop_url = heroUrl;
+              resolvedCount++;
+            }
+          } else {
+            const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+            if (res.ok) {
+              const data = await res.json();
+              let changed = false;
+              if (data.backdrop_url && data.backdrop_url !== game.backdrop_url) {
+                game.backdrop_url = data.backdrop_url;
+                changed = true;
+              }
+              if (!game.cover_url && data.cover_url) {
+                game.cover_url = data.cover_url;
+                changed = true;
+              }
+              if (changed) resolvedCount++;
+            }
+          }
+
+          if (appState.supabaseConfig.enabled && supabaseClient) {
+            const row = {
+              external_id: String(game.external_id),
+              platform: game.platform,
+              title: game.name,
+              playtime_forever: game.playtime_forever,
+              last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
+              cover_url: game.cover_url,
+              backdrop_url: game.backdrop_url || null
+            };
+            await supabaseClient
+              .from('games')
+              .upsert(row, { onConflict: 'platform,external_id' });
+          }
+        } catch (e) {
+          console.error(`Failed to refresh artwork for ${game.name}:`, e);
+        }
+      }));
+    }
+
+    saveSettingsToStorage();
+    renderGames();
+    updateStageBackground();
+    updateStats();
+
+    refreshArtworkBtn.disabled = false;
+    refreshArtworkBtn.innerHTML = '<i data-lucide="image" class="inline-icon"></i> Refresh Artwork & Backdrops';
+    lucide.createIcons();
+
+    if (resolvedCount > 0) {
+      showToast(`Refreshed artwork & backdrops for ${resolvedCount} games!`, 'success');
+    } else {
+      showToast('All games already have artwork & backdrops.', 'info');
     }
   });
 
@@ -1265,7 +1398,8 @@ async function fetchGamesFromSupabase() {
         name: item.title,
         playtime_forever: item.playtime_forever,
         rtime_last_played: item.last_played ? Math.floor(new Date(item.last_played).getTime() / 1000) : 0,
-        cover_url: item.cover_url
+        cover_url: item.cover_url,
+        backdrop_url: item.backdrop_url || null
       }));
       
       saveSettingsToStorage();
@@ -1281,21 +1415,7 @@ async function fetchGamesFromSupabase() {
 }
 
 // Sync Steam Library
-async function syncSteamLibrary() {
-  if (!appState.steamId) {
-    showToast('Please configure your Steam ID in Settings first!', 'info');
-    showPage('settings');
-    return;
-  }
-
-  // Visual feedback
-  syncSteamBtn.disabled = true;
-  syncIcon.classList.add('syncing-rotate');
-  loadingText.textContent = 'Syncing Steam Library...';
-  loadingSpinner.classList.remove('hidden');
-  gamesGrid.classList.add('hidden');
-  emptyState.classList.add('hidden');
-
+async function syncSteamLibraryCore() {
   try {
     const response = await fetch(`/api/steam/games?steamId=${appState.steamId}`);
     if (!response.ok) {
@@ -1315,6 +1435,7 @@ async function syncSteamLibrary() {
       .map(game => {
         const appid = game.appid;
         const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`;
+        const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_hero.jpg`;
         return {
           external_id: String(game.appid),
           platform: 'Steam',
@@ -1322,7 +1443,8 @@ async function syncSteamLibrary() {
           name: game.name,
           playtime_forever: game.playtime_forever,
           rtime_last_played: game.rtime_last_played || 0,
-          cover_url: coverUrl
+          cover_url: coverUrl,
+          backdrop_url: backdropUrl
         };
       });
 
@@ -1345,32 +1467,11 @@ async function syncSteamLibrary() {
   } catch (err) {
     console.error(err);
     showToast(`Steam Sync failed: ${err.message}`, 'error');
-    if (appState.games.length === 0) {
-      emptyState.classList.remove('hidden');
-    }
-  } finally {
-    syncSteamBtn.disabled = false;
-    syncIcon.classList.remove('syncing-rotate');
-    loadingSpinner.classList.add('hidden');
-    gamesGrid.classList.remove('hidden');
   }
 }
 
 // Sync GOG Library (Public profile stats sync)
-async function syncGogLibrary() {
-  if (!appState.gogUsername) {
-    showToast('Please configure your GOG username in Settings first!', 'info');
-    showPage('settings');
-    return;
-  }
-
-  syncGogBtn.disabled = true;
-  syncGogIcon.classList.add('syncing-rotate');
-  loadingText.textContent = 'Syncing GOG Library...';
-  loadingSpinner.classList.remove('hidden');
-  gamesGrid.classList.add('hidden');
-  emptyState.classList.add('hidden');
-
+async function syncGogLibraryCore() {
   try {
     const response = await fetch(`/api/gog/games?username=${encodeURIComponent(appState.gogUsername)}`);
     if (!response.ok) {
@@ -1403,6 +1504,29 @@ async function syncGogLibrary() {
         };
       });
 
+    // Resolve a landscape backdrop via Steam/IGDB search (GOG has no native hero art).
+    // Only fall back to a vertical cover when GOG itself provided none.
+    const gogBatchSize = 10;
+    for (let i = 0; i < newGogGames.length; i += gogBatchSize) {
+      const batch = newGogGames.slice(i, i + gogBatchSize);
+      await Promise.all(batch.map(async game => {
+        try {
+          const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+          if (res.ok) {
+            const coverData = await res.json();
+            if (coverData.backdrop_url) {
+              game.backdrop_url = coverData.backdrop_url;
+            }
+            if (!game.cover_url && coverData.cover_url) {
+              game.cover_url = coverData.cover_url;
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to resolve artwork for ${game.name}:`, e);
+        }
+      }));
+    }
+
     appState.games = [
       ...appState.games.filter(g => g.platform !== 'GOG'),
       ...newGogGames
@@ -1422,14 +1546,45 @@ async function syncGogLibrary() {
   } catch (err) {
     console.error(err);
     showToast(`GOG Sync failed: ${err.message}`, 'error');
-    if (appState.games.length === 0) {
-      emptyState.classList.remove('hidden');
-    }
-  } finally {
-    syncGogBtn.disabled = false;
-    syncGogIcon.classList.remove('syncing-rotate');
-    loadingSpinner.classList.add('hidden');
-    gamesGrid.classList.remove('hidden');
+  }
+}
+
+// Orchestrate a sync of one or both platforms from the merged button / dropdown
+async function triggerSync(platforms) {
+  if (platforms.includes('Steam') && !appState.steamId) {
+    showToast('Please configure your Steam ID in Settings first!', 'info');
+    showPage('settings');
+    return;
+  }
+  if (platforms.includes('GOG') && !appState.gogUsername) {
+    showToast('Please configure your GOG username in Settings first!', 'info');
+    showPage('settings');
+    return;
+  }
+
+  // Visual feedback on the merged button
+  if (syncAllBtn) syncAllBtn.disabled = true;
+  if (syncDropdownToggle) syncDropdownToggle.disabled = true;
+  if (syncAllIcon) syncAllIcon.classList.add('syncing-rotate');
+  loadingText.textContent = `Syncing ${platforms.join(' & ')} Library...`;
+  loadingSpinner.classList.remove('hidden');
+  gamesGrid.classList.add('hidden');
+  emptyState.classList.add('hidden');
+
+  const tasks = [];
+  if (platforms.includes('Steam')) tasks.push(syncSteamLibraryCore());
+  if (platforms.includes('GOG')) tasks.push(syncGogLibraryCore());
+
+  await Promise.allSettled(tasks);
+
+  loadingSpinner.classList.add('hidden');
+  gamesGrid.classList.remove('hidden');
+  if (syncAllBtn) syncAllBtn.disabled = false;
+  if (syncDropdownToggle) syncDropdownToggle.disabled = false;
+  if (syncAllIcon) syncAllIcon.classList.remove('syncing-rotate');
+
+  if (appState.games.length === 0) {
+    emptyState.classList.remove('hidden');
   }
 }
 
@@ -1615,75 +1770,50 @@ function renderGames() {
 
   gamesGrid.appendChild(fragment);
   lucide.createIcons();
-  renderFeatured();
+  updateStageBackground();
 }
 
-// Render the Featured Hero (Most Played game)
-function renderFeatured() {
-  if (!featuredHero) return;
+// Update the decorative top-stage backdrop with a random game cover
+function updateStageBackground() {
+  if (!topStageBg) return;
 
-  // Hide the hero when browsing a filtered/search subset so it doesn't contradict the grid
-  if (appState.games.length === 0 || appState.filters !== 'all' || appState.searchQuery) {
-    featuredHero.classList.add('hidden');
-    featuredHero.innerHTML = '';
-    return;
-  }
-
-  // Pick the most-played game that has cover art; fall back to most recently played, then any
+  const heroTitle = document.getElementById('hero-title');
   const withCovers = appState.games.filter(g => g.cover_url);
-  const pool = withCovers.length > 0 ? withCovers : appState.games;
-
-  const featured = pool.slice().sort((a, b) => {
-    if (b.playtime_forever !== a.playtime_forever) return b.playtime_forever - a.playtime_forever;
-    return b.rtime_last_played - a.rtime_last_played;
-  })[0];
-
-  if (!featured) {
-    featuredHero.classList.add('hidden');
+  if (withCovers.length === 0) {
+    topStageBg.classList.add('hidden');
+    topStageBg.removeAttribute('src');
+    backdropGameId = null;
+    if (heroTitle) heroTitle.textContent = '';
     return;
   }
 
-  const playtimeHours = (featured.playtime_forever / 60).toFixed(1);
-  const playtimeText = featured.playtime_forever > 0 ? `${playtimeHours} hrs played` : 'Unplayed';
-  const lastPlayedText = featured.rtime_last_played
-    ? new Date(featured.rtime_last_played * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-    : 'Never played';
-  const platformClass = (featured.platform || 'other').toLowerCase();
-
-  featuredHero.innerHTML = `
-    <img class="featured-hero-bg" src="${featured.cover_url}" alt="" loading="lazy">
-    <div class="featured-hero-scrim"></div>
-    <div class="featured-hero-content">
-      <span class="featured-eyebrow"><i data-lucide="trophy"></i> Most Played</span>
-      <h2 class="featured-title">${featured.name}</h2>
-      <div class="featured-meta">
-        <span class="meta-item platform-chip ${platformClass}"><i data-lucide="monitor"></i> ${featured.platform}</span>
-        <span class="meta-item playtime"><i data-lucide="clock"></i> ${playtimeText}</span>
-        <span class="meta-item last-played"><i data-lucide="calendar"></i> ${lastPlayedText}</span>
-      </div>
-      <div class="featured-actions">
-        <button class="btn btn-primary" id="featured-browse-btn">
-          <i data-lucide="layout-grid"></i> Browse Library
-        </button>
-      </div>
-    </div>
-  `;
-
-  lucide.createIcons();
-
-  const heroBg = featuredHero.querySelector('.featured-hero-bg');
-  if (heroBg) {
-    heroBg.addEventListener('error', () => { heroBg.style.display = 'none'; });
+  // Keep the current random pick if it's still in the library; otherwise choose a new random one
+  const stillPresent = withCovers.find(g => String(g.external_id) === String(backdropGameId));
+  let chosen = stillPresent;
+  if (!chosen) {
+    chosen = withCovers[Math.floor(Math.random() * withCovers.length)];
+    backdropGameId = chosen.external_id;
   }
 
-  const browseBtn = document.getElementById('featured-browse-btn');
-  if (browseBtn) {
-    browseBtn.addEventListener('click', () => {
-      gamesGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+  // Prefer a stored landscape backdrop. Steam games can derive their hero art directly
+  // from the AppID with no network lookup, so already-synced Steam games get a banner instantly.
+  let backdropUrl = chosen.backdrop_url && String(chosen.backdrop_url).trim() ? chosen.backdrop_url : null;
+  if (!backdropUrl && chosen.platform === 'Steam' && chosen.appid) {
+    backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${chosen.appid}/library_hero.jpg`;
   }
-
-  featuredHero.classList.remove('hidden');
+  topStageBg.onerror = () => {
+    if (topStageBg.dataset.fallback !== 'cover' && chosen.cover_url) {
+      topStageBg.dataset.fallback = 'cover';
+      topStageBg.src = chosen.cover_url;
+    } else {
+      topStageBg.classList.add('hidden');
+      topStageBg.onerror = null;
+    }
+  };
+  topStageBg.onload = () => topStageBg.classList.remove('hidden');
+  topStageBg.dataset.fallback = backdropUrl ? 'backdrop' : 'cover';
+  topStageBg.src = backdropUrl || chosen.cover_url;
+  if (heroTitle) heroTitle.textContent = chosen.name || '';
 }
 
 // Helper to replace image element with cover placeholder without wiping other components
@@ -1718,37 +1848,17 @@ function updateStats() {
   if (appState.games.length === 0) {
     statTotalGames.textContent = '0';
     statTotalHours.textContent = '0 hrs';
-    statPlayedRatio.textContent = '0%';
-    statFavoriteGame.textContent = 'None';
     return;
   }
 
   const totalGames = appState.games.length;
-  
+
   // Hours
   const totalMinutes = appState.games.reduce((sum, g) => sum + g.playtime_forever, 0);
   const totalHours = Math.round(totalMinutes / 60);
-  
-  // Ratio played
-  const playedGamesCount = appState.games.filter(g => g.playtime_forever > 0).length;
-  const ratio = totalGames > 0 ? Math.round((playedGamesCount / totalGames) * 100) : 0;
-  
-  // Most Played
-  let favorite = 'None';
-  let maxPlaytime = 0;
-  
-  appState.games.forEach(g => {
-    if (g.playtime_forever > maxPlaytime) {
-      maxPlaytime = g.playtime_forever;
-      favorite = g.name;
-    }
-  });
 
   statTotalGames.textContent = totalGames.toLocaleString();
   statTotalHours.textContent = `${totalHours.toLocaleString()} hrs`;
-  statPlayedRatio.textContent = `${ratio}%`;
-  statFavoriteGame.textContent = favorite;
-  statFavoriteGame.title = favorite;
 }
 
 // Page Switcher Action

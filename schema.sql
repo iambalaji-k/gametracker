@@ -11,12 +11,16 @@ CREATE TABLE IF NOT EXISTS public.games (
   playtime_forever INTEGER DEFAULT 0, -- Store playtime in minutes
   last_played TIMESTAMP WITH TIME ZONE,
   cover_url TEXT,
+  backdrop_url TEXT, -- Landscape hero/screenshot used for the top banner backdrop (Steam library_hero / IGDB screenshot)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE (user_id, platform, external_id) -- Prevents duplicate entries per user per platform
 );
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.games ENABLE ROW LEVEL SECURITY;
+
+-- For an EXISTING table that was created before backdrop_url existed, run:
+--   ALTER TABLE public.games ADD COLUMN IF NOT EXISTS backdrop_url TEXT;
 
 -- Row-level policies: each user can only see and modify their own rows.
 -- (If you run this on an existing table, drop the old public policies first:

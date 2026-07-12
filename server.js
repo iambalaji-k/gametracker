@@ -262,10 +262,12 @@ app.get('/api/games/search-cover', async (req, res) => {
       if (data && data.items && data.items.length > 0) {
         const item = data.items[0];
         const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_600x900.jpg`;
+        const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_hero.jpg`;
         return res.json({
           appid: item.id,
           title: item.name,
           cover_url: coverUrl,
+          backdrop_url: backdropUrl,
           source: 'Steam'
         });
       }
@@ -277,7 +279,7 @@ app.get('/api/games/search-cover', async (req, res) => {
     if (clientId && clientSecret) {
       try {
         const token = await getTwitchAccessToken();
-        const query = `search "${escapeIgdbString(name)}"; fields name, cover.url; limit 1;`;
+        const query = `search "${escapeIgdbString(name)}"; fields name, cover.url, screenshots.url; limit 1;`;
 
         const igdbRes = await fetchWithTimeout('https://api.igdb.com/v4/games', {
           method: 'POST',
@@ -302,10 +304,20 @@ app.get('/api/games/search-cover', async (req, res) => {
               }
               coverUrl = url.replace('t_thumb', 't_cover_big');
             }
+            // Use the first IGDB screenshot as a landscape backdrop when available
+            let backdropUrl = null;
+            if (game.screenshots && game.screenshots.length > 0) {
+              let sUrl = game.screenshots[0].url;
+              if (sUrl.startsWith('//')) {
+                sUrl = 'https:' + sUrl;
+              }
+              backdropUrl = sUrl.replace('t_thumb', 't_720p');
+            }
             return res.json({
               appid: 'igdb_' + game.id,
               title: game.name,
               cover_url: coverUrl,
+              backdrop_url: backdropUrl,
               source: 'IGDB'
             });
           }
@@ -359,7 +371,7 @@ app.get('/api/igdb/search', async (req, res) => {
   try {
     const token = await getTwitchAccessToken();
     const clientId = process.env.TWITCH_CLIENT_ID;
-    const query = `search "${escapeIgdbString(term)}"; fields name, cover.url, first_release_date, platforms.name; limit 10;`;
+    const query = `search "${escapeIgdbString(term)}"; fields name, cover.url, screenshots.url, first_release_date, platforms.name; limit 10;`;
 
     const response = await fetchWithTimeout('https://api.igdb.com/v4/games', {
       method: 'POST',
@@ -381,6 +393,7 @@ app.get('/api/igdb/search', async (req, res) => {
     const formatted = games.map(game => {
       let coverUrl = null;
       let tinyImage = NO_COVER_PLACEHOLDER;
+      let backdropUrl = null;
 
       if (game.cover && game.cover.url) {
         let url = game.cover.url;
@@ -391,11 +404,21 @@ app.get('/api/igdb/search', async (req, res) => {
         tinyImage = url;
       }
 
+      // Use the first IGDB screenshot as a landscape backdrop when available
+      if (game.screenshots && game.screenshots.length > 0) {
+        let sUrl = game.screenshots[0].url;
+        if (sUrl.startsWith('//')) {
+          sUrl = 'https:' + sUrl;
+        }
+        backdropUrl = sUrl.replace('t_thumb', 't_720p');
+      }
+
       return {
         id: game.id,
         name: game.name,
         tiny_image: tinyImage,
         cover_url: coverUrl,
+        backdrop_url: backdropUrl,
         platforms: game.platforms ? game.platforms.map(p => p.name) : []
       };
     });
