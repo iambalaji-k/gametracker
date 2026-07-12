@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrossPlay - PC Game Tracker</title>
+  <!-- Google Fonts: Outfit for headers, Inter for UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Supabase JS Client CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="style.css?v=1.1">
+</head>
+<body>
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Background Ambient Glows -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Main Container -->
+  <div class="app-layout">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="sidebar">
+      <button class="sidebar-toggle-btn" id="sidebar-toggle" title="Collapse Sidebar">
+        <i data-lucide="chevron-left"></i>
+      </button>
+      <div class="sidebar-brand">
+        <i data-lucide="gamepad-2" class="brand-icon"></i>
+        <h1>CrossPlay</h1>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" id="nav-library">
+          <i data-lucide="library"></i>
+          <span>Game Library</span>
+        </a>
+        <a href="#" class="nav-item" id="nav-settings-btn">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sync-status offline" id="connection-status">
+          <span class="status-dot"></span>
+          <span id="connection-text">Local Storage Mode</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <div id="library-view">
+      <!-- Top Action Bar -->
+      <header class="top-bar">
+        <div class="search-box">
+          <i data-lucide="search" class="search-icon"></i>
+          <input type="text" id="search-input" placeholder="Search library...">
+        </div>
+        
+        <div class="profile-actions" style="display: flex; gap: 0.75rem;">
+          <button class="btn btn-secondary" id="add-game-btn" style="background-color: var(--bg-glass-active); border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary);">
+            <i data-lucide="plus"></i>
+            <span>Add Game</span>
+          </button>
+          <button class="btn btn-secondary" id="sync-gog-btn">
+            <i data-lucide="refresh-cw" id="sync-gog-icon"></i>
+            <span>Sync GOG</span>
+          </button>
+          <button class="btn btn-primary" id="sync-steam-btn">
+            <i data-lucide="refresh-cw" id="sync-icon"></i>
+            <span>Sync Steam</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Dashboard Stats Summary -->
+      <section class="stats-summary" id="stats-summary-sec">
+        <div class="stat-card">
+          <div class="stat-icon-wrapper purple">
+            <i data-lucide="play-circle"></i>
+          </div>
+          <div class="stat-info">
+            <h3 id="stat-total-games">0</h3>
+            <p>Total Games</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon-wrapper blue">
+            <i data-lucide="clock"></i>
+          </div>
+          <div class="stat-info">
+            <h3 id="stat-total-hours">0 hrs</h3>
+            <p>Playtime Accumulated</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon-wrapper green">
+            <i data-lucide="trending-up"></i>
+          </div>
+          <div class="stat-info">
+            <h3 id="stat-played-ratio">0%</h3>
+            <p>Completion / Played</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon-wrapper pink">
+            <i data-lucide="crown"></i>
+          </div>
+          <div class="stat-info">
+            <h3 id="stat-favorite-game" class="truncate">None</h3>
+            <p>Most Played Game</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Library Grid Controls -->
+      <section class="library-controls">
+        <div class="filter-tabs">
+          <button class="tab-btn active" data-filter="all">All Games</button>
+          <button class="tab-btn" data-filter="Steam">Steam</button>
+          <button class="tab-btn" data-filter="GOG">GOG</button>
+          <button class="tab-btn" data-filter="Epic">Epic</button>
+          <button class="tab-btn" data-filter="Legacy">Legacy</button>
+          <button class="tab-btn" data-filter="other">Other</button>
+        </div>
+
+        <div class="sort-options">
+          <label for="sort-select"><i data-lucide="sliders-horizontal" class="inline-icon"></i> Sort by</label>
+          <select id="sort-select" class="styled-select">
+            <option value="playtime-desc">Most Played</option>
+            <option value="playtime-asc">Least Played</option>
+            <option value="lastplayed-desc">Recently Played</option>
+            <option value="name-asc">Alphabetical (A-Z)</option>
+            <option value="name-desc">Alphabetical (Z-A)</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Games Grid -->
+      <section class="games-grid-container">
+        <div id="games-loading" class="loading-spinner-wrapper hidden">
+          <div class="spinner"></div>
+          <p id="loading-text">Syncing games from API...</p>
+        </div>
+        
+        <div id="empty-state" class="empty-state">
+          <i data-lucide="gamepad" class="empty-icon"></i>
+          <h2>No games in library yet</h2>
+          <p>To populate your game dashboard, click the button below to configure your Steam/GOG/Epic integrations!</p>
+          <button class="btn btn-primary" id="empty-state-settings-btn">
+            <i data-lucide="settings"></i> Configure Integrations
+          </button>
+        </div>
+
+        <div id="games-grid" class="games-grid"></div>
+      </section>
+      </div>
+
+      <!-- Settings Page -->
+      <div id="settings-view" class="settings-page hidden">
+        <div class="settings-header">
+          <h2><i data-lucide="settings" class="settings-title-icon"></i> Configurations</h2>
+        </div>
+
+        <div class="settings-body">
+        
+        <!-- Steam Configuration -->
+        <div class="settings-section">
+          <h3><i data-lucide="steam" class="inline-icon"></i> Steam Integration</h3>
+          <p class="section-desc">Enter your Steam ID or Vanity URL to import your Steam game library.</p>
+          
+          <div class="form-group">
+            <label for="steam-identifier">Steam Custom Vanity URL or 17-digit Steam ID</label>
+            <div class="input-with-button">
+              <input type="text" id="steam-identifier" placeholder="e.g. gaben or 76561197960287930">
+              <button class="btn btn-secondary" id="save-steam-btn">Apply</button>
+            </div>
+            <p class="help-text">
+              <i data-lucide="info" class="tiny-icon"></i> Make sure your Steam Privacy settings for <strong>Game Details</strong> are set to <strong>Public</strong>.
+            </p>
+          </div>
+          
+          <div class="profile-resolved-card hidden" id="resolved-profile-card">
+            <div class="profile-avatar-placeholder">
+              <i data-lucide="user"></i>
+            </div>
+            <div class="profile-info">
+              <h4 id="resolved-name">Steam Account</h4>
+              <p id="resolved-id" class="help-text">ID: 7656119XXXXXXXXXX</p>
+            </div>
+            <div class="profile-status-badge">Ready</div>
+          </div>
+        </div>
+
+        <hr class="settings-divider">
+
+        <!-- GOG Configuration -->
+        <div class="settings-section">
+          <h3><i data-lucide="gamepad" class="inline-icon"></i> GOG Integration</h3>
+          <p class="section-desc">Enter your GOG username to import your GOG library (e.g. balajikalidasan28_).</p>
+          
+          <div class="form-group">
+            <label for="gog-username">GOG Profile Username</label>
+            <div class="input-with-button">
+              <input type="text" id="gog-username" placeholder="e.g. balajikalidasan28_">
+              <button class="btn btn-secondary" id="save-gog-btn">Apply</button>
+            </div>
+            <p class="help-text">
+              <i data-lucide="info" class="tiny-icon"></i> Make sure your GOG Privacy settings for <strong>Profile & Games Library</strong> are set to <strong>Public (All visitors)</strong>.
+            </p>
+          </div>
+          
+          <div class="profile-resolved-card hidden" id="resolved-gog-card">
+            <div class="profile-avatar-placeholder" style="background-color: hsla(280, 89%, 66%, 0.1); border-color: rgba(168, 85, 247, 0.3); color: hsl(280, 89%, 66%);">
+              <i data-lucide="user"></i>
+            </div>
+            <div class="profile-info">
+              <h4 id="resolved-gog-name">GOG Account</h4>
+              <p id="resolved-gog-id" class="help-text">Username: balajikalidasan28_</p>
+            </div>
+            <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
+          </div>
+        </div>
+
+        <hr class="settings-divider">
+
+        <!-- Epic Games Configuration -->
+        <div class="settings-section">
+          <h3><i data-lucide="gamepad-2" class="inline-icon" style="color: var(--color-secondary);"></i> Epic Games Integration</h3>
+          <p class="section-desc">Epic Games does not have public profiles. Follow these secure steps to import your games:</p>
+          
+          <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
+            <p><strong>Instructions:</strong></p>
+            <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
+              <li>Log into <a href="https://www.epicgames.com/account/transactions" target="_blank" style="color: var(--color-secondary); text-decoration: underline;">Epic Transactions Page</a>.</li>
+              <li>Press <strong>F12</strong> to open the developer tools console.</li>
+              <li>Click **Copy Extractor Script** below, paste it into the console, and press **Enter**.</li>
+              <li>Once finished, copy the generated JSON text, paste it into the input box below, and click **Import**.</li>
+            </ol>
+          </div>
+
+          <div class="form-group">
+            <button class="btn btn-secondary" id="copy-epic-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
+              <i data-lucide="copy" class="inline-icon"></i> Copy Extractor Script
+            </button>
+            
+            <label for="epic-json-input">Paste Extracted Epic Games JSON:</label>
+            <textarea id="epic-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Control", ...}]'></textarea>
+          </div>
+
+          <button class="btn btn-secondary" id="import-epic-btn" style="width: 100%; background-color: hsla(190, 90%, 50%, 0.08); border-color: rgba(0, 242, 254, 0.25); color: var(--color-secondary);">
+            <i data-lucide="file-input" class="inline-icon"></i> Import Epic Games Library
+          </button>
+
+          <div class="profile-resolved-card hidden" id="resolved-epic-card">
+            <div class="profile-avatar-placeholder" style="background-color: hsla(190, 90%, 50%, 0.1); border-color: rgba(0, 242, 254, 0.3); color: var(--color-secondary);">
+              <i data-lucide="user"></i>
+            </div>
+            <div class="profile-info">
+              <h4 id="resolved-epic-name">Epic Games Account</h4>
+              <p id="resolved-epic-id" class="help-text">Sync Status: Synced Successfully</p>
+            </div>
+            <div class="profile-status-badge" style="background-color: hsla(190, 90%, 50%, 0.15); color: var(--color-secondary); border-color: rgba(0, 242, 254, 0.2);">Ready</div>
+          </div>
+        </div>
+
+        <hr class="settings-divider">
+
+        <!-- Legacy Games Configuration -->
+        <div class="settings-section">
+          <h3><i data-lucide="gamepad" class="inline-icon" style="color: #f6ad55;"></i> Legacy Games Integration</h3>
+          <p class="section-desc">Legacy Games manages purchases inside their account portal. Follow these steps to import:</p>
+          
+          <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
+            <p><strong>Instructions:</strong></p>
+            <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
+              <li>Log into Legacy Games <a href="https://legacygames.com/my-account/downloads/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Downloads</a> or <a href="https://legacygames.com/my-account/free-games/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Free Games</a>.</li>
+              <li>Press <strong>F12</strong> to open the developer tools console.</li>
+              <li>Click **Copy Legacy Extractor Script** below, paste it in the console, and press **Enter**.</li>
+              <li>Copy the generated JSON output, paste it below, and click **Import**.</li>
+            </ol>
+          </div>
+
+          <div class="form-group">
+            <button class="btn btn-secondary" id="copy-legacy-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
+              <i data-lucide="copy" class="inline-icon"></i> Copy Legacy Extractor Script
+            </button>
+            
+            <label for="legacy-json-input">Paste Extracted Legacy Games JSON:</label>
+            <textarea id="legacy-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Sifu", ...}]'></textarea>
+          </div>
+
+          <button class="btn btn-secondary" id="import-legacy-btn" style="width: 100%; background-color: rgba(246, 173, 85, 0.08); border-color: rgba(246, 173, 85, 0.25); color: #f6ad55;">
+            <i data-lucide="file-input" class="inline-icon"></i> Import Legacy Games Library
+          </button>
+
+          <div class="profile-resolved-card hidden" id="resolved-legacy-card">
+            <div class="profile-avatar-placeholder" style="background-color: rgba(246, 173, 85, 0.1); border-color: rgba(246, 173, 85, 0.3); color: #f6ad55;">
+              <i data-lucide="user"></i>
+            </div>
+            <div class="profile-info">
+              <h4 id="resolved-legacy-name">Legacy Games Account</h4>
+              <p id="resolved-legacy-id" class="help-text">Sync Status: Synced Successfully</p>
+            </div>
+            <div class="profile-status-badge" style="background-color: rgba(246, 173, 85, 0.15); color: #f6ad55; border-color: rgba(246, 173, 85, 0.2);">Ready</div>
+          </div>
+        </div>
+
+
+
+        <!-- Supabase Configuration -->
+        <div class="settings-section">
+          <h3><i data-lucide="cloud" class="inline-icon"></i> Supabase Integration (Production Sync)</h3>
+          <p class="section-desc">Toggle the cloud storage. Once keys are configured, data will automatically sync to Supabase when running imports.</p>
+          
+          <div class="form-group toggle-group">
+            <label for="supabase-toggle">Enable Supabase Sync</label>
+            <label class="switch">
+              <input type="checkbox" id="supabase-toggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div id="supabase-fields" class="supabase-fields hidden">
+            <div class="form-group">
+              <label for="supabase-url">Supabase URL</label>
+              <input type="text" id="supabase-url" placeholder="https://your-project.supabase.co">
+            </div>
+
+            <div class="form-group">
+              <label for="supabase-anon-key">Supabase Anon Key</label>
+              <input type="password" id="supabase-anon-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+            </div>
+
+            <button class="btn btn-secondary" id="save-supabase-btn">Save & Test Connection</button>
+          </div>
+        </div>
+
+        <!-- IGDB Configuration Status -->
+        <div class="settings-section">
+          <h3><i data-lucide="key" class="inline-icon" style="color: #a78bfa;"></i> IGDB API Status</h3>
+          <p class="section-desc">Twitch Developer credentials used for IGDB fallback game search and cover resolution are loaded from your local <code class="highlight-code">.env</code> file.</p>
+          <div class="form-group">
+            <div id="igdb-env-status" class="profile-resolved-card" style="margin-top: 0.5rem; background: var(--bg-glass); border: 1px solid var(--border-glass);">
+              <div class="profile-avatar-placeholder" id="igdb-status-avatar" style="background-color: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa;">
+                <i data-lucide="shield-alert" id="igdb-status-icon"></i>
+              </div>
+              <div class="profile-info">
+                <h4>IGDB Search Integration</h4>
+                <p id="igdb-env-text" class="help-text">Checking credentials status...</p>
+              </div>
+              <div class="profile-status-badge" id="igdb-status-badge" style="background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">Offline</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Library Maintenance Tools -->
+        <div class="settings-section">
+          <h3><i data-lucide="wrench" class="inline-icon" style="color: #10b981;"></i> Library Maintenance</h3>
+          <p class="section-desc">Utility actions to update and clean up your games collection.</p>
+          <button class="btn btn-secondary" id="resolve-covers-btn" style="width: 100%; border-color: rgba(16, 185, 129, 0.3); color: #10b981; background-color: rgba(16, 185, 129, 0.05); transition: all 0.2s ease;">
+            <i data-lucide="image-down" class="inline-icon"></i> Scan & Resolve Missing Covers
+          </button>
+          <button class="btn btn-secondary" id="resolve-gog-covers-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary); background-color: rgba(168, 85, 247, 0.05); transition: all 0.2s ease;">
+            <i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)
+          </button>
+        </div>
+
+        <!-- Help Info -->
+        <div class="settings-section help-section">
+          <h4>Need help?</h4>
+          <p>For Supabase setup, you need to execute the schema in your project's SQL editor. The schema definitions are stored in <code class="highlight-code">schema.sql</code> inside the project root.</p>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+  <!-- Add Game Modal Overlay -->
+  <div class="modal-overlay" id="add-game-modal">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h2><i data-lucide="plus-circle" class="settings-title-icon"></i> Add Game Manually</h2>
+        <button class="close-btn" id="close-add-game-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="settings-body">
+        <!-- Store Catalog Search -->
+        <div class="settings-section">
+          <h3><i data-lucide="search" class="inline-icon" style="color: #63b3ed;"></i> Search Database</h3>
+          <p class="section-desc">Search Steam or IGDB to auto-fill details and cover art for the game.</p>
+          <div class="form-group">
+            <div class="input-with-button" style="display: flex; gap: 0.5rem;">
+              <select id="search-source-select" class="styled-select" style="max-width: 100px; padding: 0.5rem; background-color: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-main); font-family: inherit; font-size: 0.85rem;">
+                <option value="steam">Steam</option>
+                <option value="igdb">IGDB</option>
+              </select>
+              <input type="text" id="steam-search-input" placeholder="e.g. Witcher 3" style="flex-grow: 1;">
+              <button class="btn btn-secondary" id="steam-search-btn">Search</button>
+            </div>
+            <div id="steam-search-results" class="search-results-list hidden"></div>
+          </div>
+        </div>
+
+        <hr class="settings-divider">
+
+        <!-- Manual Details Form -->
+        <div class="settings-section">
+          <h3><i data-lucide="edit-3" class="inline-icon"></i> Game Details</h3>
+          <p class="section-desc">Enter or modify the metadata below.</p>
+          
+          <form id="add-game-form">
+            <div class="form-group">
+              <label for="manual-title">Game Title *</label>
+              <input type="text" id="manual-title" required placeholder="e.g. Cyberpunk 2077">
+            </div>
+
+            <div class="form-group">
+              <label for="manual-platform">Platform *</label>
+              <select id="manual-platform" class="styled-select" style="width: 100%;">
+                <option value="Steam">Steam</option>
+                <option value="GOG">GOG</option>
+                <option value="Epic">Epic</option>
+                <option value="Legacy">Legacy Games</option>
+                <option value="Amazon Gaming">Amazon Gaming</option>
+                <option value="Microsoft Store">Microsoft Store</option>
+                <option value="Other">Other / Custom</option>
+              </select>
+            </div>
+
+            <div class="form-group hidden" id="custom-platform-group">
+              <label for="manual-custom-platform">Custom Platform Name *</label>
+              <input type="text" id="manual-custom-platform" placeholder="e.g. Nintendo Switch">
+            </div>
+
+            <div class="form-group">
+              <label for="manual-cover">Cover Image URL</label>
+              <input type="text" id="manual-cover" placeholder="e.g. https://domain.com/image.jpg (Optional)">
+            </div>
+
+            <div class="form-group">
+              <label for="manual-playtime">Playtime (Hours)</label>
+              <input type="number" id="manual-playtime" min="0" value="0" step="0.1">
+            </div>
+
+            <div class="form-group">
+              <label for="manual-lastplayed">Last Played</label>
+              <input type="date" id="manual-lastplayed">
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+              <i data-lucide="save"></i> Save Game to Library
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=1.1"></script>
+</body>
+</html>
