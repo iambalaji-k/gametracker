@@ -85,7 +85,7 @@
             </button>
             <div class="sync-menu hidden" id="sync-menu" role="menu">
               <button class="sync-menu-item" data-sync="steam" role="menuitem">
-                <i data-lucide="steam"></i><span>Sync Steam</span>
+                <i data-lucide="gamepad-2"></i><span>Sync Steam</span>
               </button>
               <button class="sync-menu-item" data-sync="gog" role="menuitem">
                 <i data-lucide="gamepad-2"></i><span>Sync GOG</span>
@@ -209,7 +209,7 @@
             <div class="settings-tab-pane active" id="tab-accounts">
               <!-- Steam Configuration -->
               <div class="settings-section">
-                <h3><i data-lucide="steam" class="inline-icon"></i> Steam Integration</h3>
+                <h3><i data-lucide="gamepad-2" class="inline-icon"></i> Steam Integration</h3>
                 <p class="section-desc">Enter your Steam ID or Vanity URL to import your Steam game library.</p>
                 
                 <div class="form-group">
@@ -408,6 +408,21 @@
                 <button class="btn btn-secondary" id="refresh-artwork-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(99, 179, 237, 0.3); color: #63b3ed; background-color: rgba(99, 179, 237, 0.05); transition: all 0.2s ease;">
                   <i data-lucide="image" class="inline-icon"></i> Refresh Artwork & Backdrops
                 </button>
+              </div>
+
+              <!-- Data Backup & Restore -->
+              <div class="settings-section" style="margin-top: 1.5rem;">
+                <h3><i data-lucide="download" class="inline-icon" style="color: #38bdf8;"></i> Backup & Restore</h3>
+                <p class="section-desc">Download a copy of your library and settings as a JSON file, or restore from a backup.</p>
+                <div style="display: flex; gap: 0.75rem; margin-top: 0.75rem;">
+                  <button class="btn btn-secondary" id="export-backup-btn" style="flex: 1; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; background-color: rgba(56, 189, 248, 0.05); transition: all 0.2s ease;">
+                    <i data-lucide="download" class="inline-icon"></i> Export JSON Backup
+                  </button>
+                  <button class="btn btn-secondary" id="import-backup-btn" style="flex: 1; border-color: rgba(244, 63, 94, 0.3); color: #f43f5e; background-color: rgba(244, 63, 94, 0.05); transition: all 0.2s ease;">
+                    <i data-lucide="upload" class="inline-icon"></i> Import JSON Backup
+                  </button>
+                </div>
+                <input type="file" id="backup-file-input" accept=".json" class="hidden">
               </div>
             </div>
           </div>

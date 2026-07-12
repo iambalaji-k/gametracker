@@ -58,7 +58,7 @@ app.use(
         styleSrcElem: ["'self'", "https://fonts.googleapis.com", "'unsafe-inline'"],
         fontSrc: ["'self'", "https:", "data:"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co"],
+        connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "https://unpkg.com"],
       },
     },
   })

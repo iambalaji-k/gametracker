@@ -352,6 +352,9 @@ const supabaseStatusBadge = document.getElementById('supabase-status-badge');
 const resolveCoversBtn = document.getElementById('resolve-covers-btn');
 const resolveGogCoversBtn = document.getElementById('resolve-gog-covers-btn');
 const refreshArtworkBtn = document.getElementById('refresh-artwork-btn');
+const exportBackupBtn = document.getElementById('export-backup-btn');
+const importBackupBtn = document.getElementById('import-backup-btn');
+const backupFileInput = document.getElementById('backup-file-input');
 
 // Stats Elements
 const statTotalGames = document.getElementById('stat-total-games');
@@ -644,30 +647,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (appState.supabaseConfig.enabled && supabaseClient) {
     await fetchSettingsFromSupabase();
     await fetchGamesFromSupabase();
-
-    // One-time migration: If Supabase has no games but local storage does, sync them!
-    const localSaved = localStorage.getItem('crossplay_state');
-    if (localSaved && (!appState.games || appState.games.length === 0)) {
-      try {
-        const parsed = JSON.parse(localSaved);
-        if (parsed.games && parsed.games.length > 0) {
-          showToast('Migrating local storage data to Supabase...', 'info');
-          appState.games = parsed.games;
-          appState.steamId = parsed.steamId || appState.steamId;
-          appState.vanityUrl = parsed.vanityUrl || appState.vanityUrl;
-          appState.gogUsername = parsed.gogUsername || appState.gogUsername;
-          appState.epicConnected = parsed.epicConnected || appState.epicConnected;
-          appState.legacyConnected = parsed.legacyConnected || appState.legacyConnected;
-          appState.blacklistAppIds = parsed.blacklistAppIds || appState.blacklistAppIds;
-          appState.blacklistTitles = parsed.blacklistTitles || appState.blacklistTitles;
-          
-          await saveSettingsToStorage(); // Saves settings to Supabase settings table
-          await syncGamesToSupabase(appState.games); // Syncs games to Supabase games table
-        }
-      } catch (err) {
-        console.error('Migration failed:', err);
-      }
-    }
   }
 
   // Initial render
@@ -750,7 +729,7 @@ async function saveSettingsToStorage() {
     blacklistAppIds: appState.blacklistAppIds,
     blacklistTitles: appState.blacklistTitles
   };
-  localStorage.setItem('crossplay_state', JSON.stringify(dataToSave));
+  // Saved entirely to Supabase now. No local storage writes.
 
   // Sync to Supabase settings table if connected
   if (supabaseClient) {
@@ -1573,6 +1552,103 @@ function setupEventListeners() {
       return;
     }
   });
+
+  // Export JSON Backup
+  if (exportBackupBtn) {
+    exportBackupBtn.addEventListener('click', () => {
+      if (!appState.games || appState.games.length === 0) {
+        showToast('Your library is empty. Nothing to backup!', 'info');
+        return;
+      }
+
+      const backupData = {
+        version: "1.0",
+        timestamp: new Date().toISOString(),
+        games: appState.games,
+        steamId: appState.steamId,
+        vanityUrl: appState.vanityUrl,
+        gogUsername: appState.gogUsername,
+        epicConnected: appState.epicConnected,
+        legacyConnected: appState.legacyConnected,
+        blacklistAppIds: appState.blacklistAppIds,
+        blacklistTitles: appState.blacklistTitles
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `pc_game_tracker_backup_${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Library backup exported successfully!', 'success');
+    });
+  }
+
+  // Import JSON Backup trigger
+  if (importBackupBtn && backupFileInput) {
+    importBackupBtn.addEventListener('click', () => {
+      backupFileInput.click();
+    });
+
+    backupFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const parsed = JSON.parse(evt.target.result);
+          if (!parsed.games || !Array.isArray(parsed.games)) {
+            throw new Error('Invalid backup file: missing games list');
+          }
+
+          const confirmRestore = confirm(`Are you sure you want to restore ${parsed.games.length} games and settings from this backup? This will overwrite your current database library.`);
+          if (!confirmRestore) {
+            backupFileInput.value = '';
+            return;
+          }
+
+          showToast('Restoring backup to Supabase...', 'info');
+
+          // Update appState
+          appState.games = parsed.games;
+          appState.steamId = parsed.steamId || '';
+          appState.vanityUrl = parsed.vanityUrl || '';
+          appState.gogUsername = parsed.gogUsername || '';
+          appState.epicConnected = parsed.epicConnected || false;
+          appState.legacyConnected = parsed.legacyConnected || false;
+          appState.blacklistAppIds = parsed.blacklistAppIds || [];
+          appState.blacklistTitles = parsed.blacklistTitles || [];
+
+          // Save to Supabase (forces settings update and games update)
+          await saveSettingsToStorage();
+          await syncGamesToSupabase(appState.games);
+
+          // Clear local storage if any legacy exists
+          localStorage.removeItem('crossplay_state');
+
+          // Render
+          emptyState.classList.add('hidden');
+          renderGames();
+          updateStats();
+          updateStageBackground();
+          
+          showToast('Library and settings restored successfully from backup!', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast(`Restore failed: ${err.message}`, 'error');
+        }
+        backupFileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
 }
 
 // Initialize Supabase Connection using credentials fetched from backend env
@@ -1610,9 +1686,9 @@ async function fetchSettingsFromSupabase() {
       .from('settings')
       .select('*')
       .eq('id', 1)
-      .single();
+      .maybeSingle();
       
-    if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned" in postgrest
+    if (error) {
       throw error;
     }
     
@@ -1766,6 +1842,14 @@ async function fetchGamesFromSupabase() {
       renderGames();
       updateStats();
       showToast(`Imported ${data.length} games from Supabase cloud database`, 'success');
+    } else {
+      // Database has no games. If we have games in appState (loaded from localStorage), migrate them to Supabase!
+      if (appState.games && appState.games.length > 0) {
+        showToast('Migrating local storage data to Supabase...', 'info');
+        await saveSettingsToStorage(); // Saves settings to Supabase settings table
+        await syncGamesToSupabase(appState.games); // Syncs games to Supabase games table
+        localStorage.removeItem('crossplay_state'); // Clear local storage completely after migration
+      }
     }
   } catch (err) {
     console.error('Error fetching from Supabase:', err);
