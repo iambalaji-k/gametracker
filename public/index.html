@@ -350,29 +350,20 @@
             <div class="settings-tab-pane" id="tab-cloud">
               <!-- Supabase Configuration -->
               <div class="settings-section">
-                <h3><i data-lucide="cloud" class="inline-icon"></i> Supabase Integration (Production Sync)</h3>
-                <p class="section-desc">Toggle the cloud storage. Once keys are configured, data will automatically sync to Supabase when running imports.</p>
+                <h3><i data-lucide="cloud" class="inline-icon" style="color: #3b82f6;"></i> Supabase Integration (Cloud Sync)</h3>
+                <p class="section-desc">Database configurations are loaded automatically from the server's <code class="highlight-code">.env</code> file.</p>
                 
-                <div class="form-group toggle-group">
-                  <label for="supabase-toggle">Enable Supabase Sync</label>
-                  <label class="switch">
-                    <input type="checkbox" id="supabase-toggle">
-                    <span class="slider round"></span>
-                  </label>
-                </div>
-
-                <div id="supabase-fields" class="supabase-fields hidden">
-                  <div class="form-group">
-                    <label for="supabase-url">Supabase URL</label>
-                    <input type="text" id="supabase-url" placeholder="https://your-project.supabase.co">
+                <div class="form-group">
+                  <div id="supabase-env-status" class="profile-resolved-card" style="margin-top: 0.5rem; background: var(--bg-glass); border: 1px solid var(--border-glass);">
+                    <div class="profile-avatar-placeholder" id="supabase-status-avatar" style="background-color: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); color: #3b82f6;">
+                      <i data-lucide="cloud-off" id="supabase-status-icon"></i>
+                    </div>
+                    <div class="profile-info">
+                      <h4>Supabase Cloud Sync</h4>
+                      <p id="supabase-env-text" class="help-text">Checking database status...</p>
+                    </div>
+                    <div class="profile-status-badge" id="supabase-status-badge" style="background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">Offline</div>
                   </div>
-
-                  <div class="form-group">
-                    <label for="supabase-anon-key">Supabase Anon Key</label>
-                    <input type="password" id="supabase-anon-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
-                  </div>
-
-                  <button class="btn btn-secondary" id="save-supabase-btn">Save & Test Connection</button>
                 </div>
               </div>
 

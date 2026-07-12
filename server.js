@@ -434,7 +434,10 @@ app.get('/api/igdb/search', async (req, res) => {
 app.get('/api/config/status', (req, res) => {
   res.json({
     twitchConfigured: !!(process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET),
-    steamConfigured: !!(process.env.steam_web_api_key || process.env.STEAM_API_KEY)
+    steamConfigured: !!(process.env.steam_web_api_key || process.env.STEAM_API_KEY),
+    supabaseConfigured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
+    supabaseUrl: process.env.SUPABASE_URL || null,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null
   });
 });
 

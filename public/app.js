@@ -344,12 +344,11 @@ const manualCoverInput = document.getElementById('manual-cover');
 const manualPlaytimeInput = document.getElementById('manual-playtime');
 const manualLastPlayedInput = document.getElementById('manual-lastplayed');
 
-// Supabase inputs
-const supabaseToggle = document.getElementById('supabase-toggle');
-const supabaseFields = document.getElementById('supabase-fields');
-const supabaseUrlInput = document.getElementById('supabase-url');
-const supabaseAnonKeyInput = document.getElementById('supabase-anon-key');
-const saveSupabaseBtn = document.getElementById('save-supabase-btn');
+// Supabase status UI selectors
+const supabaseStatusAvatar = document.getElementById('supabase-status-avatar');
+const supabaseStatusIcon = document.getElementById('supabase-status-icon');
+const supabaseStatusText = document.getElementById('supabase-env-text');
+const supabaseStatusBadge = document.getElementById('supabase-status-badge');
 const resolveCoversBtn = document.getElementById('resolve-covers-btn');
 const resolveGogCoversBtn = document.getElementById('resolve-gog-covers-btn');
 const refreshArtworkBtn = document.getElementById('refresh-artwork-btn');
@@ -641,18 +640,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check Twitch/IGDB API credentials status
   await checkIgdbStatus();
   
+  // If Supabase is connected, fetch settings and games from there
+  if (appState.supabaseConfig.enabled && supabaseClient) {
+    await fetchSettingsFromSupabase();
+    await fetchGamesFromSupabase();
+
+    // One-time migration: If Supabase has no games but local storage does, sync them!
+    const localSaved = localStorage.getItem('crossplay_state');
+    if (localSaved && (!appState.games || appState.games.length === 0)) {
+      try {
+        const parsed = JSON.parse(localSaved);
+        if (parsed.games && parsed.games.length > 0) {
+          showToast('Migrating local storage data to Supabase...', 'info');
+          appState.games = parsed.games;
+          appState.steamId = parsed.steamId || appState.steamId;
+          appState.vanityUrl = parsed.vanityUrl || appState.vanityUrl;
+          appState.gogUsername = parsed.gogUsername || appState.gogUsername;
+          appState.epicConnected = parsed.epicConnected || appState.epicConnected;
+          appState.legacyConnected = parsed.legacyConnected || appState.legacyConnected;
+          appState.blacklistAppIds = parsed.blacklistAppIds || appState.blacklistAppIds;
+          appState.blacklistTitles = parsed.blacklistTitles || appState.blacklistTitles;
+          
+          await saveSettingsToStorage(); // Saves settings to Supabase settings table
+          await syncGamesToSupabase(appState.games); // Syncs games to Supabase games table
+        }
+      } catch (err) {
+        console.error('Migration failed:', err);
+      }
+    }
+  }
+
   // Initial render
   if (appState.games && appState.games.length > 0) {
     emptyState.classList.add('hidden');
     renderGames();
     updateStats();
   } else {
-    // If Supabase is connected, try to fetch cached database games first
-    if (appState.supabaseConfig.enabled && supabaseClient) {
-      await fetchGamesFromSupabase();
-    } else {
-      emptyState.classList.remove('hidden');
-    }
+    emptyState.classList.remove('hidden');
   }
 });
 
@@ -706,20 +730,15 @@ function loadSettingsFromStorage() {
 
 
       
-      supabaseToggle.checked = appState.supabaseConfig.enabled;
-      if (appState.supabaseConfig.enabled) {
-        supabaseFields.classList.remove('hidden');
-      }
-      supabaseUrlInput.value = appState.supabaseConfig.url || '';
-      supabaseAnonKeyInput.value = appState.supabaseConfig.anonKey || '';
+      // Supabase is loaded automatically from backend now.
     } catch (e) {
       console.error('Error parsing saved settings state:', e);
     }
   }
 }
 
-// Save settings to local storage
-function saveSettingsToStorage() {
+// Save settings to local storage and Supabase database
+async function saveSettingsToStorage() {
   const dataToSave = {
     games: appState.games,
     steamId: appState.steamId,
@@ -732,6 +751,29 @@ function saveSettingsToStorage() {
     blacklistTitles: appState.blacklistTitles
   };
   localStorage.setItem('crossplay_state', JSON.stringify(dataToSave));
+
+  // Sync to Supabase settings table if connected
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('settings')
+        .upsert({
+          id: 1, // Constrained to single row
+          steam_id: appState.steamId,
+          vanity_url: appState.vanityUrl,
+          gog_username: appState.gogUsername,
+          epic_connected: appState.epicConnected,
+          legacy_connected: appState.legacyConnected,
+          blacklist_app_ids: appState.blacklistAppIds,
+          blacklist_titles: appState.blacklistTitles,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      
+      if (error) throw error;
+    } catch (err) {
+      console.error('Failed to sync settings to Supabase:', err);
+    }
+  }
 }
 
 // Setup Event Listeners
@@ -1085,61 +1127,7 @@ function setupEventListeners() {
       importLegacyBtn.textContent = 'Import Legacy Games Library';
     }
   });
-
-
-
-
-
-  // Supabase Toggle fields
-  supabaseToggle.addEventListener('change', (e) => {
-    if (e.target.checked) {
-      supabaseFields.classList.remove('hidden');
-    } else {
-      supabaseFields.classList.add('hidden');
-      appState.supabaseConfig.enabled = false;
-      saveSettingsToStorage();
-      updateConnectionStatusUI();
-      showToast('Supabase Sync Disabled', 'info');
-    }
-  });
-
-  // Save Supabase Configuration
-  saveSupabaseBtn.addEventListener('click', async () => {
-    const url = supabaseUrlInput.value.trim();
-    const anonKey = supabaseAnonKeyInput.value.trim();
-    
-    if (!url || !anonKey) {
-      showToast('Supabase URL and Anon Key are required', 'error');
-      return;
-    }
-    
-    saveSupabaseBtn.disabled = true;
-    saveSupabaseBtn.textContent = 'Testing Connection...';
-    
-    try {
-      const testClient = supabase.createClient(url, anonKey);
-      const { error } = await testClient.from('games').select('count', { count: 'exact', head: true });
-      
-      if (error) throw error;
-      
-      appState.supabaseConfig.url = url;
-      appState.supabaseConfig.anonKey = anonKey;
-      appState.supabaseConfig.enabled = true;
-      saveSettingsToStorage();
-      
-      supabaseClient = testClient;
-      updateConnectionStatusUI();
-      showToast('Supabase connection tested and saved successfully!', 'success');
-      
-      await fetchGamesFromSupabase();
-    } catch (err) {
-      console.error(err);
-      showToast(`Connection failed: ${err.message || 'Check database table and RLS policies'}`, 'error');
-    } finally {
-      saveSupabaseBtn.disabled = false;
-      saveSupabaseBtn.textContent = 'Save & Test Connection';
-    }
-  });
+  // Supabase connections are now handled automatically via backend configuration.
 
   // Platform Sync triggers (merged button syncs both; dropdown syncs individually)
   syncAllBtn.addEventListener('click', () => triggerSync(['Steam', 'GOG']));
@@ -1587,19 +1575,86 @@ function setupEventListeners() {
   });
 }
 
-// Initialize Supabase Connection
+// Initialize Supabase Connection using credentials fetched from backend env
 async function initializeSupabase() {
-  if (appState.supabaseConfig.enabled && appState.supabaseConfig.url && appState.supabaseConfig.anonKey) {
-    try {
-      supabaseClient = supabase.createClient(appState.supabaseConfig.url, appState.supabaseConfig.anonKey);
+  try {
+    const res = await fetch('/api/config/status');
+    if (!res.ok) throw new Error('Failed to fetch config status');
+    const data = await res.json();
+    
+    if (data.supabaseConfigured && data.supabaseUrl && data.supabaseAnonKey) {
+      appState.supabaseConfig = {
+        enabled: true,
+        url: data.supabaseUrl,
+        anonKey: data.supabaseAnonKey
+      };
+      supabaseClient = supabase.createClient(data.supabaseUrl, data.supabaseAnonKey);
       updateConnectionStatusUI();
-    } catch (err) {
-      console.error('Failed to initialize Supabase Client:', err);
+    } else {
       appState.supabaseConfig.enabled = false;
       updateConnectionStatusUI();
     }
-  } else {
+  } catch (err) {
+    console.error('Failed to initialize Supabase Client:', err);
+    appState.supabaseConfig.enabled = false;
     updateConnectionStatusUI();
+  }
+}
+
+// Fetch app settings from Supabase
+async function fetchSettingsFromSupabase() {
+  if (!supabaseClient) return;
+  
+  try {
+    const { data, error } = await supabaseClient
+      .from('settings')
+      .select('*')
+      .eq('id', 1)
+      .single();
+      
+    if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned" in postgrest
+      throw error;
+    }
+    
+    if (data) {
+      appState.steamId = data.steam_id || '';
+      appState.vanityUrl = data.vanity_url || '';
+      appState.gogUsername = data.gog_username || '';
+      appState.epicConnected = data.epic_connected || false;
+      appState.legacyConnected = data.legacy_connected || false;
+      appState.blacklistAppIds = data.blacklist_app_ids || [];
+      appState.blacklistTitles = data.blacklist_titles || [];
+      
+      // Populate inputs with settings
+      steamIdentifierInput.value = appState.vanityUrl || appState.steamId || '';
+      if (appState.steamId) {
+        resolvedProfileCard.classList.remove('hidden');
+        resolvedName.textContent = appState.vanityUrl ? `@${appState.vanityUrl}` : 'Steam Account';
+        resolvedId.textContent = `ID: ${appState.steamId}`;
+      }
+      
+      gogUsernameInput.value = appState.gogUsername || '';
+      if (appState.gogUsername) {
+        resolvedGogCard.classList.remove('hidden');
+        resolvedGogName.textContent = `@${appState.gogUsername}`;
+        resolvedGogId.textContent = `Username: ${appState.gogUsername}`;
+      }
+      
+      if (appState.epicConnected) {
+        resolvedEpicCard.classList.remove('hidden');
+      } else {
+        resolvedEpicCard.classList.add('hidden');
+      }
+
+      if (appState.legacyConnected) {
+        resolvedLegacyCard.classList.remove('hidden');
+      } else {
+        resolvedLegacyCard.classList.add('hidden');
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching settings from Supabase:', err);
+    showToast('Failed to load settings from Supabase database', 'error');
   }
 }
 
@@ -1609,11 +1664,38 @@ function updateConnectionStatusUI() {
     connectionStatus.classList.remove('offline');
     connectionStatus.classList.add('online');
     connectionText.textContent = 'Supabase Connected';
+    
+    // Update settings tab status UI
+    if (supabaseStatusText && supabaseStatusBadge && supabaseStatusIcon && supabaseStatusAvatar) {
+      supabaseStatusText.textContent = 'Connected to cloud database.';
+      supabaseStatusBadge.textContent = 'Active';
+      supabaseStatusBadge.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+      supabaseStatusBadge.style.color = '#10b981';
+      supabaseStatusBadge.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+      supabaseStatusIcon.setAttribute('data-lucide', 'cloud-lightning');
+      supabaseStatusAvatar.style.color = '#10b981';
+      supabaseStatusAvatar.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+      supabaseStatusAvatar.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+    }
   } else {
     connectionStatus.classList.remove('online');
     connectionStatus.classList.add('offline');
     connectionText.textContent = 'Local Storage Mode';
+    
+    // Update settings tab status UI
+    if (supabaseStatusText && supabaseStatusBadge && supabaseStatusIcon && supabaseStatusAvatar) {
+      supabaseStatusText.textContent = 'Not configured or unable to connect. Set SUPABASE_URL and SUPABASE_ANON_KEY in .env.';
+      supabaseStatusBadge.textContent = 'Offline';
+      supabaseStatusBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+      supabaseStatusBadge.style.color = '#ef4444';
+      supabaseStatusBadge.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+      supabaseStatusIcon.setAttribute('data-lucide', 'cloud-off');
+      supabaseStatusAvatar.style.color = '#ef4444';
+      supabaseStatusAvatar.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+      supabaseStatusAvatar.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+    }
   }
+  lucide.createIcons();
 }
 
 // Check if Twitch/IGDB API credentials are configured in local .env
