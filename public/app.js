@@ -1994,6 +1994,14 @@ async function syncGogLibraryCore() {
 
 // Orchestrate a sync of one or both platforms from the merged button / dropdown
 async function triggerSync(platforms) {
+  // Normalize platform names to correct casing ('Steam', 'GOG')
+  platforms = platforms.map(p => {
+    const lower = p.toLowerCase();
+    if (lower === 'steam') return 'Steam';
+    if (lower === 'gog') return 'GOG';
+    return p;
+  });
+
   if (platforms.includes('Steam') && !appState.steamId) {
     showToast('Please configure your Steam ID in Settings first!', 'info');
     showPage('settings');
