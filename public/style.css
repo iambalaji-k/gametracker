@@ -1726,6 +1726,7 @@ input:checked + .slider:before {
   flex-direction: column;
   gap: 0.75rem;
   z-index: 200;
+  pointer-events: none;
 }
 
 .toast {

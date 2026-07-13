@@ -8,7 +8,7 @@ let appState = {
   legacyConnected: false,
   filters: 'all',
   searchQuery: '',
-  sortKey: 'playtime-desc',
+  sortKey: 'name-asc',
   supabaseConfig: {
     enabled: false,
     url: '',
