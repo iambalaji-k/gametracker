@@ -30,6 +30,25 @@ function escapeIgdbString(value) {
     .replace(/[\r\n;]/g, ' ');
 }
 
+// Extract STOVE member number from raw ID or profile URL
+function extractStoveMemberNo(input) {
+  if (!input) return '';
+  const trimmed = String(input).trim();
+  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2}\/)?(\d+)/i);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+  const digitsMatch = trimmed.match(/^\d+$/);
+  if (digitsMatch) {
+    return trimmed;
+  }
+  const anyDigits = trimmed.match(/(\d{6,})/);
+  if (anyDigits) {
+    return anyDigits[1];
+  }
+  return trimmed;
+}
+
 // Self-contained SVG placeholder (the old via.placeholder.com service is defunct)
 const NO_COVER_PLACEHOLDER = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90">' +
@@ -38,7 +57,7 @@ const NO_COVER_PLACEHOLDER = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComp
   '</svg>'
 );
 
-export { app, fetchWithTimeout, escapeIgdbString };
+export { app, fetchWithTimeout, escapeIgdbString, extractStoveMemberNo };
 
 // Resolve paths for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -190,6 +209,100 @@ app.get('/api/gog/games', async (req, res) => {
   } catch (error) {
     console.error('Error fetching GOG games:', error);
     return res.status(500).json({ error: 'Failed to fetch GOG games' });
+  }
+});
+
+// Endpoint to fetch STOVE games using profile own-games API
+app.get('/api/stove/games', async (req, res) => {
+  const { memberNo: rawMemberNo } = req.query;
+  if (!rawMemberNo) {
+    return res.status(400).json({ error: 'memberNo query parameter is required' });
+  }
+
+  const memberNo = extractStoveMemberNo(rawMemberNo);
+  if (!memberNo) {
+    return res.status(400).json({ error: 'Invalid STOVE Member No or Profile URL' });
+  }
+
+  try {
+    let page = 1;
+    let allGames = [];
+    let totalPages = 1;
+    const MAX_PAGES = 50;
+
+    do {
+      const url = `https://api.onstove.com/myindie/v1.1/own-games?member_no=${encodeURIComponent(memberNo)}&product_type=GAME&product_type=DLC&product_type=DEMO&product_type=UTILITY&product_type=COLLECTION&product_type=ALL&size=50&page=${page}`;
+      const response = await fetchWithTimeout(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Referer': 'https://profile.onstove.com/',
+          'Origin': 'https://profile.onstove.com',
+          'X-Lang': 'EN',
+          'X-Device-Type': 'pc',
+          'X-Nation': 'US'
+        }
+      }, 10000);
+
+      if (response.status === 404 || response.status === 403) {
+        return res.status(404).json({ error: 'STOVE user profile is private, does not exist, or could not be loaded.' });
+      }
+
+      if (!response.ok) {
+        throw new Error(`STOVE API returned status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.code !== undefined && data.code !== 0 && data.code !== 200) {
+        if (data.code === 90003 || data.message === 'NOT_FOUND') {
+          return res.status(404).json({ error: 'STOVE user profile is private or not found.' });
+        }
+      }
+
+      const value = data.value || {};
+      totalPages = value.total_pages || 1;
+      const content = value.content || [];
+
+      content.forEach(item => {
+        let coverUrl = null;
+        if (Array.isArray(item.resources)) {
+          const coverRes = item.resources.find(r => r.resource_id === 'cover.title' || r.resource_id === 'cover.background' || r.resource_id === 'cover.titleListDefault') || item.resources[0];
+          if (coverRes && coverRes.data && coverRes.data.link_cdn) {
+            coverUrl = coverRes.data.link_cdn;
+          }
+        }
+        if (!coverUrl && item.page_url) {
+          coverUrl = item.page_url;
+        }
+
+        const rawName = item.product_name || item.title || 'STOVE Game';
+        let englishName = rawName;
+        const parenMatch = rawName.match(/\(([A-Za-z0-9\s:,'!\-\.\?]+)\)/);
+        if (parenMatch && parenMatch[1] && parenMatch[1].trim().length > 1) {
+          englishName = parenMatch[1].trim();
+        } else {
+          const englishOnly = rawName.replace(/[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf\uac00-\ud7af]/g, '').trim();
+          if (englishOnly.length > 1) {
+            englishName = englishOnly.replace(/^[\s:\-\(\)]+|[\s:\-\(\)]+$/g, '');
+          }
+        }
+
+        allGames.push({
+          appid: String(item.product_no || item.game_id || item.game_no),
+          name: englishName,
+          playtime_forever: item.play_time || 0,
+          rtime_last_played: item.last_play_date ? Math.floor(new Date(item.last_play_date).getTime() / 1000) : 0,
+          cover_url: coverUrl
+        });
+      });
+
+      page++;
+    } while (page <= totalPages && page <= MAX_PAGES);
+
+    return res.json({ memberNo, games: allGames });
+  } catch (error) {
+    console.error('Error fetching STOVE games:', error);
+    return res.status(500).json({ error: 'Failed to fetch STOVE games' });
   }
 });
 
@@ -447,12 +560,25 @@ app.get(/^(?!\/api\/).*/, (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`==================================================`);
-    console.log(`   PC Game Tracker Server Running Locally!`);
-    console.log(`   URL: http://localhost:${PORT}`);
-    console.log(`==================================================`);
-  });
+  function startServer(portToTry) {
+    const server = app.listen(portToTry, () => {
+      console.log(`==================================================`);
+      console.log(`   PC Game Tracker Server Running Locally!`);
+      console.log(`   URL: http://localhost:${portToTry}`);
+      console.log(`==================================================`);
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`Port ${portToTry} is in use. Trying port ${portToTry + 1}...`);
+        startServer(Number(portToTry) + 1);
+      } else {
+        console.error('Server error:', err);
+      }
+    });
+  }
+
+  startServer(PORT);
 }
 
 export default app;

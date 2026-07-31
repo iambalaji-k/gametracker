@@ -4,6 +4,7 @@ let appState = {
   steamId: '',
   vanityUrl: '',
   gogUsername: '',
+  stoveMemberNo: '',
   epicConnected: false,
   legacyConnected: false,
   filters: 'all',
@@ -314,6 +315,13 @@ const saveGogBtn = document.getElementById('save-gog-btn');
 const resolvedGogCard = document.getElementById('resolved-gog-card');
 const resolvedGogName = document.getElementById('resolved-gog-name');
 const resolvedGogId = document.getElementById('resolved-gog-id');
+
+// STOVE inputs
+const stoveMemberNoInput = document.getElementById('stove-member-no');
+const saveStoveBtn = document.getElementById('save-stove-btn');
+const resolvedStoveCard = document.getElementById('resolved-stove-card');
+const resolvedStoveName = document.getElementById('resolved-stove-name');
+const resolvedStoveId = document.getElementById('resolved-stove-id');
 
 // Epic inputs
 const copyEpicScriptBtn = document.getElementById('copy-epic-script-btn');
@@ -669,6 +677,7 @@ function loadSettingsFromStorage() {
       appState.steamId = parsed.steamId || '';
       appState.vanityUrl = parsed.vanityUrl || '';
       appState.gogUsername = parsed.gogUsername || '';
+      appState.stoveMemberNo = parsed.stoveMemberNo || '';
       appState.epicConnected = parsed.epicConnected || false;
       appState.legacyConnected = parsed.legacyConnected || false;
       appState.supabaseConfig = parsed.supabaseConfig || { enabled: false, url: '', anonKey: '' };
@@ -699,6 +708,15 @@ function loadSettingsFromStorage() {
         resolvedGogId.textContent = `Username: ${appState.gogUsername}`;
       }
       
+      if (stoveMemberNoInput) {
+        stoveMemberNoInput.value = appState.stoveMemberNo || '';
+      }
+      if (appState.stoveMemberNo && resolvedStoveCard) {
+        resolvedStoveCard.classList.remove('hidden');
+        if (resolvedStoveName) resolvedStoveName.textContent = 'STOVE Account';
+        if (resolvedStoveId) resolvedStoveId.textContent = `Member ID: ${appState.stoveMemberNo}`;
+      }
+
       if (appState.epicConnected) {
         resolvedEpicCard.classList.remove('hidden');
       }
@@ -723,6 +741,7 @@ async function saveSettingsToStorage() {
     steamId: appState.steamId,
     vanityUrl: appState.vanityUrl,
     gogUsername: appState.gogUsername,
+    stoveMemberNo: appState.stoveMemberNo,
     epicConnected: appState.epicConnected,
     legacyConnected: appState.legacyConnected,
     supabaseConfig: appState.supabaseConfig,
@@ -741,6 +760,7 @@ async function saveSettingsToStorage() {
           steam_id: appState.steamId,
           vanity_url: appState.vanityUrl,
           gog_username: appState.gogUsername,
+          stove_member_no: appState.stoveMemberNo,
           epic_connected: appState.epicConnected,
           legacy_connected: appState.legacyConnected,
           blacklist_app_ids: appState.blacklistAppIds,
@@ -855,6 +875,25 @@ function setupEventListeners() {
     });
   });
 
+// Helper to extract STOVE member number from raw ID or profile URL
+function extractStoveMemberNo(input) {
+  if (!input) return '';
+  const trimmed = String(input).trim();
+  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2}\/)?(\d+)/i);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+  const digitsMatch = trimmed.match(/^\d+$/);
+  if (digitsMatch) {
+    return trimmed;
+  }
+  const anyDigits = trimmed.match(/(\d{6,})/);
+  if (anyDigits) {
+    return anyDigits[1];
+  }
+  return trimmed;
+}
+
   // Steam config save
   saveSteamBtn.addEventListener('click', async () => {
     const inputVal = steamIdentifierInput.value.trim();
@@ -917,6 +956,33 @@ function setupEventListeners() {
     
     showToast('GOG integration configuration saved!', 'success');
   });
+
+  // STOVE config save
+  if (saveStoveBtn) {
+    saveStoveBtn.addEventListener('click', () => {
+      const rawInput = stoveMemberNoInput.value.trim();
+      if (!rawInput) {
+        showToast('Please enter a STOVE Member ID or Profile URL', 'error');
+        return;
+      }
+      
+      const memberNo = extractStoveMemberNo(rawInput);
+      if (!memberNo) {
+        showToast('Invalid STOVE Member ID or Profile URL', 'error');
+        return;
+      }
+
+      appState.stoveMemberNo = memberNo;
+      stoveMemberNoInput.value = memberNo;
+      saveSettingsToStorage();
+
+      resolvedStoveCard.classList.remove('hidden');
+      resolvedStoveName.textContent = 'STOVE Account';
+      resolvedStoveId.textContent = `Member ID: ${memberNo}`;
+
+      showToast('STOVE integration configuration saved!', 'success');
+    });
+  }
 
   // Epic Games - Copy Extractor Script
   copyEpicScriptBtn.addEventListener('click', async () => {
@@ -1108,8 +1174,20 @@ function setupEventListeners() {
   });
   // Supabase connections are now handled automatically via backend configuration.
 
-  // Platform Sync triggers (merged button syncs both; dropdown syncs individually)
-  syncAllBtn.addEventListener('click', () => triggerSync(['Steam', 'GOG']));
+  // Platform Sync triggers (merged button syncs all configured platforms; dropdown syncs individually)
+  syncAllBtn.addEventListener('click', () => {
+    const configuredPlatforms = [];
+    if (appState.steamId) configuredPlatforms.push('Steam');
+    if (appState.gogUsername) configuredPlatforms.push('GOG');
+    if (appState.stoveMemberNo) configuredPlatforms.push('Stove');
+    
+    if (configuredPlatforms.length === 0) {
+      // Default to trying all 3 and prompting for missing settings if none configured
+      triggerSync(['Steam', 'GOG', 'Stove']);
+    } else {
+      triggerSync(configuredPlatforms);
+    }
+  });
   syncDropdownToggle.addEventListener('click', (e) => {
     e.stopPropagation();
     const isHidden = syncMenu.classList.toggle('hidden');
@@ -1195,6 +1273,10 @@ function setupEventListeners() {
                 platformGuess = 'GOG';
               } else if (lowerPlatforms.some(p => p.includes('epic'))) {
                 platformGuess = 'Epic';
+              } else if (lowerPlatforms.some(p => p.includes('itch'))) {
+                platformGuess = 'Itch.io';
+              } else if (lowerPlatforms.some(p => p.includes('stove'))) {
+                platformGuess = 'Stove';
               } else if (lowerPlatforms.some(p => p.includes('steam') || p.includes('pc') || p.includes('windows') || p.includes('mac') || p.includes('linux'))) {
                 platformGuess = 'Steam';
               } else if (lowerPlatforms.some(p => p.includes('xbox'))) {
@@ -1696,6 +1778,7 @@ async function fetchSettingsFromSupabase() {
       appState.steamId = data.steam_id || '';
       appState.vanityUrl = data.vanity_url || '';
       appState.gogUsername = data.gog_username || '';
+      appState.stoveMemberNo = data.stove_member_no || '';
       appState.epicConnected = data.epic_connected || false;
       appState.legacyConnected = data.legacy_connected || false;
       appState.blacklistAppIds = data.blacklist_app_ids || [];
@@ -1714,6 +1797,15 @@ async function fetchSettingsFromSupabase() {
         resolvedGogCard.classList.remove('hidden');
         resolvedGogName.textContent = `@${appState.gogUsername}`;
         resolvedGogId.textContent = `Username: ${appState.gogUsername}`;
+      }
+      
+      if (stoveMemberNoInput) {
+        stoveMemberNoInput.value = appState.stoveMemberNo || '';
+      }
+      if (appState.stoveMemberNo && resolvedStoveCard) {
+        resolvedStoveCard.classList.remove('hidden');
+        if (resolvedStoveName) resolvedStoveName.textContent = 'STOVE Account';
+        if (resolvedStoveId) resolvedStoveId.textContent = `Member ID: ${appState.stoveMemberNo}`;
       }
       
       if (appState.epicConnected) {
@@ -1756,7 +1848,7 @@ function updateConnectionStatusUI() {
   } else {
     connectionStatus.classList.remove('online');
     connectionStatus.classList.add('offline');
-    connectionText.textContent = 'Local Storage Mode';
+    connectionText.textContent = 'Database Offline';
     
     // Update settings tab status UI
     if (supabaseStatusText && supabaseStatusBadge && supabaseStatusIcon && supabaseStatusAvatar) {
@@ -1992,13 +2084,99 @@ async function syncGogLibraryCore() {
   }
 }
 
-// Orchestrate a sync of one or both platforms from the merged button / dropdown
+// Sync STOVE Library
+async function syncStoveLibraryCore() {
+  try {
+    const response = await fetch(`/api/stove/games?memberNo=${encodeURIComponent(appState.stoveMemberNo)}`);
+    if (!response.ok) {
+      let errMsg = `Server returned error status: ${response.status}`;
+      try {
+        const errJson = await response.json();
+        if (errJson && errJson.error) errMsg = errJson.error;
+      } catch (e) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    if (!data.games) {
+      throw new Error('No games returned. STOVE profile might be private.');
+    }
+
+    const stoveGames = data.games;
+    const newStoveGames = stoveGames
+      .filter(game => !shouldExcludeGame(game.name, game.appid))
+      .map(game => {
+        let cover = game.cover_url || '';
+        if (cover.startsWith('//')) {
+          cover = 'https:' + cover;
+        }
+        return {
+          external_id: String(game.appid),
+          platform: 'Stove',
+          appid: game.appid,
+          name: game.name,
+          playtime_forever: game.playtime_forever || 0,
+          rtime_last_played: game.rtime_last_played || 0,
+          cover_url: cover
+        };
+      });
+
+    // Resolve landscape backdrop artwork via search-cover if no native hero
+    const stoveBatchSize = 10;
+    for (let i = 0; i < newStoveGames.length; i += stoveBatchSize) {
+      const batch = newStoveGames.slice(i, i + stoveBatchSize);
+      await Promise.all(batch.map(async game => {
+        try {
+          const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+          if (res.ok) {
+            const coverData = await res.json();
+            if (coverData.backdrop_url) {
+              game.backdrop_url = coverData.backdrop_url;
+            }
+            if (!game.cover_url && coverData.cover_url) {
+              game.cover_url = coverData.cover_url;
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to resolve artwork for ${game.name}:`, e);
+        }
+      }));
+    }
+
+    appState.games = [
+      ...appState.games.filter(g => g.platform !== 'Stove'),
+      ...newStoveGames
+    ];
+
+    saveSettingsToStorage();
+
+    if (appState.supabaseConfig.enabled && supabaseClient) {
+      showToast('Syncing STOVE library with Supabase...', 'info');
+      await syncGamesToSupabase(appState.games);
+    }
+
+    renderGames();
+    updateStats();
+    if (newStoveGames.length === 0) {
+      showToast('STOVE sync complete: 0 games found. (Verify your STOVE account owns games and library is Public)', 'info');
+    } else {
+      showToast(`Successfully synced ${newStoveGames.length} STOVE games!`, 'success');
+    }
+
+  } catch (err) {
+    console.error(err);
+    showToast(`STOVE Sync failed: ${err.message}`, 'error');
+  }
+}
+
+// Orchestrate a sync of one or all configured platforms from the merged button / dropdown
 async function triggerSync(platforms) {
-  // Normalize platform names to correct casing ('Steam', 'GOG')
+  // Normalize platform names to correct casing ('Steam', 'GOG', 'Stove')
   platforms = platforms.map(p => {
     const lower = p.toLowerCase();
     if (lower === 'steam') return 'Steam';
     if (lower === 'gog') return 'GOG';
+    if (lower === 'stove') return 'Stove';
     return p;
   });
 
@@ -2009,6 +2187,11 @@ async function triggerSync(platforms) {
   }
   if (platforms.includes('GOG') && !appState.gogUsername) {
     showToast('Please configure your GOG username in Settings first!', 'info');
+    showPage('settings');
+    return;
+  }
+  if (platforms.includes('Stove') && !appState.stoveMemberNo) {
+    showToast('Please configure your STOVE Member ID in Settings first!', 'info');
     showPage('settings');
     return;
   }
@@ -2023,8 +2206,9 @@ async function triggerSync(platforms) {
   emptyState.classList.add('hidden');
 
   const tasks = [];
-  if (platforms.includes('Steam')) tasks.push(syncSteamLibraryCore());
-  if (platforms.includes('GOG')) tasks.push(syncGogLibraryCore());
+  if (platforms.includes('Steam') && appState.steamId) tasks.push(syncSteamLibraryCore());
+  if (platforms.includes('GOG') && appState.gogUsername) tasks.push(syncGogLibraryCore());
+  if (platforms.includes('Stove') && appState.stoveMemberNo) tasks.push(syncStoveLibraryCore());
 
   await Promise.allSettled(tasks);
 
@@ -2086,9 +2270,19 @@ function getPlatformBadgeHtml(platform) {
     iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="currentColor">
       <path d="M3.537 0C2.165 0 1.66.506 1.66 1.879V18.44a4.262 4.262 0 00.02.433c.031.3.037.59.316.92.027.033.311.245.311.245.153.075.258.13.43.2l8.335 3.491c.433.199.614.276.928.27h.002c.314.006.495-.071.928-.27l8.335-3.492c.172-.07.277-.124.43-.2 0 0 .284-.211.311-.243.28-.33.285-.621.316-.92a4.261 4.261 0 00.02-.434V1.879c0-1.373-.506-1.88-1.878-1.88zm13.366 3.11h.68c1.138 0 1.688.553 1.688 1.696v1.88h-1.374v-1.8c0-.369-.17-.54-.523-.54h-.235c-.367 0-.537.17-.537.539v5.81c0 .369.17.54.537.54h.262c.353 0 .523-.171.523-.54V8.619h1.373v2.143c0 1.144-.562 1.71-1.7 1.71h-.694c-1.138 0-1.7-.566-1.7-1.71V4.82c0-1.144.562-1.709 1.7-1.709zm-12.186.08h3.114v1.274H6.117v2.603h1.648v1.275H6.117v2.774h1.74v1.275h-3.14zm3.816 0h2.198c1.138 0 1.7.564 1.7 1.708v2.445c0 1.144-.562 1.71-1.7 1.71h-.799v3.338h-1.4zm4.53 0h1.4v9.201h-1.4zm-3.13 1.235v3.392h.575c.354 0 .523-.171.523-.54V4.965c0-.368-.17-.54-.523-.54zm-3.74 10.147a1.708 1.708 0 01.591.108 1.745 1.745 0 01.49.299l-.452.546a1.247 1.247 0 00-.308-.195.91.91 0 00-.363-.068.658.658 0 00-.28.06.703.703 0 00-.224.163.783.783 0 00-.151.243.799.799 0 00-.056.299v.008a.852.852 0 00.056.31.7.7 0 00.157.245.736.736 0 00.238.16.774.774 0 00.303.058.79.79 0 00.445-.116v-.339h-.548v-.565H7.37v1.255a2.019 2.019 0 01-.524.307 1.789 1.789 0 01-.683.123 1.642 1.642 0 01-.602-.107 1.46 1.46 0 01-.478-.3 1.371 1.371 0 01-.318-.455 1.438 1.438 0 01-.115-.58v-.008a1.426 1.426 0 01.113-.57 1.449 1.449 0 01.312-.46 1.418 1.418 0 01.474-.309 1.58 1.58 0 01.598-.111 1.708 1.708 0 01.045 0zm11.963.008a2.006 2.006 0 01.612.094 1.61 1.61 0 01.507.277l-.386.546a1.562 1.562 0 00-.39-.205 1.178 1.178 0 00-.388-.07.347.347 0 00-.208.052.154.154 0 00-.07.127v.008a.158.158 0 00.022.084.198.198 0 00.076.066.831.831 0 00.147.06c.062.02.14.04.236.061a3.389 3.389 0 01.43.122 1.292 1.292 0 01.328.17.678.678 0 01.207.24.739.739 0 01.071.337v.008a.865.865 0 01-.081.382.82.82 0 01-.229.285 1.032 1.032 0 01-.353.18 1.606 1.606 0 01-.46.061 2.16 2.16 0 01-.71-.116 1.718 1.718 0 01-.593-.346l.43-.514c.277.223.578.335.9.335a.457.457 0 00.236-.05.157.157 0 00.082-.142v-.008a.15.15 0 00-.02-.077.204.204 0 00-.073-.066.753.753 0 00-.143-.062 2.45 2.45 0 00-.233-.062 5.036 5.036 0 01-.413-.113 1.26 1.26 0 01-.331-.16.72.72 0 01-.222-.243.73.73 0 01-.082-.36v-.008a.863.863 0 01.074-.359.794.794 0 01.214-.283 1.007 1.007 0 01.34-.185 1.423 1.423 0 01.448-.066 2.006 2.006 0 01.025 0zm-9.358.025h.742l1.183 2.81h-.825l-.203-.499H8.623l-.198.498h-.81zm2.197.02h.814l.663 1.08.663-1.08h.814v2.79h-.766v-1.602l-.711 1.091h-.016l-.707-1.083v1.593h-.754zm3.469 0h2.235v.658h-1.473v.422h1.334v.61h-1.334v.442h1.493v.658h-2.255zm-5.3.897l-.315.793h.624zm-1.145 5.19h8.014l-4.09 1.348z"/>
     </svg>`;
+  } else if (p === 'itch.io' || p === 'itch') {
+    platformClass = 'itch';
+    iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2.682 3.003C1.81 3.003.953 3.633.953 4.887v.64c0 1.258.91 2.33 2.128 2.502l.628.09a.573.573 0 0 1 .494.567v3.295c0 4.19 3.02 7.747 7.15 8.358.337.05.674.075 1.011.075.336 0 .673-.025 1.01-.075 4.131-.611 7.152-4.168 7.152-8.358V8.686a.573.573 0 0 1 .493-.567l.63-.09c1.217-.172 2.126-1.244 2.126-2.502v-.64c0-1.254-.856-1.884-1.728-1.884H2.682zm4.12 5.093a1.442 1.442 0 1 1 0 2.884 1.442 1.442 0 0 1 0-2.884zm10.395 0a1.442 1.442 0 1 1 0 2.884 1.442 1.442 0 0 1 0-2.884zM9.54 14.808h4.92c.494 0 .894.4.894.895 0 .494-.4.894-.895.894H9.54a.895.895 0 0 1-.895-.894c0-.495.4-.895.895-.895z"/>
+    </svg>`;
+  } else if (p === 'stove') {
+    platformClass = 'stove';
+    iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2zm-.8 15.3c-2.4 0-4.2-1.4-4.2-3.8 0-3.3 4.8-4.1 4.8-5.7 0-.5-.4-.9-1.2-.9-1 0-2.1.4-3 1l-1-1.6c1.2-.9 2.7-1.4 4.3-1.4 2.3 0 4 1.3 4 3.7 0 3.5-4.8 4.2-4.8 5.7 0 .6.5 1 1.3 1 1.2 0 2.4-.6 3.4-1.3l1 1.6c-1.3 1.1-2.9 1.7-4.6 1.7z"/>
+    </svg>`;
   } else {
     // For others (Legacy, Amazon Gaming, Microsoft Store, Custom, etc.) show official joystick SVG
-    platformClass = p.includes('legacy') ? 'legacy' : (p.includes('amazon') ? 'amazon' : (p.includes('microsoft') ? 'microsoft' : 'other'));
+    platformClass = p.includes('legacy') ? 'legacy' : (p.includes('amazon') ? 'amazon' : (p.includes('microsoft') ? 'microsoft' : (p.includes('itch') ? 'itch' : (p.includes('stove') ? 'stove' : 'other'))));
     iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2Z"/>
       <path d="M6 15v-2"/>
@@ -2118,10 +2312,12 @@ function renderGames() {
     let matchesTab = true;
     if (appState.filters !== 'all') {
       if (appState.filters === 'other') {
-        const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna'];
-        matchesTab = !knownPlatforms.includes(game.platform);
+        const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna', 'Itch.io', 'itch.io', 'Stove'];
+        matchesTab = !knownPlatforms.includes(game.platform) && game.platform?.toLowerCase() !== 'itch.io';
       } else if (appState.filters === 'Luna') {
         matchesTab = game.platform === 'Luna' || game.platform === 'Amazon Gaming';
+      } else if (appState.filters === 'Itch.io') {
+        matchesTab = game.platform === 'Itch.io' || game.platform?.toLowerCase() === 'itch.io';
       } else {
         matchesTab = game.platform === appState.filters;
       }

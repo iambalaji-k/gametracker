@@ -1,5 +1,21 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { escapeIgdbString, fetchWithTimeout } from '../server.js';
+import { escapeIgdbString, fetchWithTimeout, extractStoveMemberNo } from '../server.js';
+
+describe('extractStoveMemberNo', () => {
+  it('extracts member number from full profile URL', () => {
+    const url = 'https://profile.onstove.com/en/249980712/game?types=GAME&types=DLC&types=DEMO&types=UTILITY&types=COLLECTION';
+    expect(extractStoveMemberNo(url)).toBe('249980712');
+  });
+
+  it('returns raw member number if numeric string is provided', () => {
+    expect(extractStoveMemberNo('249980712')).toBe('249980712');
+  });
+
+  it('handles empty or null input gracefully', () => {
+    expect(extractStoveMemberNo('')).toBe('');
+    expect(extractStoveMemberNo(null)).toBe('');
+  });
+});
 
 describe('escapeIgdbString', () => {
   it('escapes double quotes and backslashes', () => {

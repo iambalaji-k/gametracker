@@ -1107,6 +1107,13 @@ body {
   color: #00f2fe;
 }
 
+.cover-placeholder.stove {
+  background: linear-gradient(135deg, hsla(24, 85%, 15%, 1) 0%, hsla(24, 90%, 7%, 1) 100%);
+}
+.cover-placeholder.stove .placeholder-icon {
+  color: #ff6b00;
+}
+
 .cover-placeholder.legacy {
   background: linear-gradient(135deg, hsla(20, 45%, 12%, 1) 0%, hsla(20, 60%, 6%, 1) 100%);
 }
@@ -1259,6 +1266,17 @@ body {
   transform: scale(1.05);
 }
 
+.card-badge.platform-badge.stove {
+  border-color: rgba(255, 107, 0, 0.3);
+  color: #ff6b00;
+  background: rgba(50, 20, 5, 0.75);
+}
+.card-badge.platform-badge.stove:hover {
+  border-color: rgba(255, 107, 0, 0.6);
+  background: rgba(50, 20, 5, 0.9);
+  transform: scale(1.05);
+}
+
 .card-badge.platform-badge.legacy {
   border-color: rgba(246, 173, 85, 0.25);
   color: #f6ad55;
@@ -1289,6 +1307,28 @@ body {
 .card-badge.platform-badge.microsoft:hover {
   border-color: rgba(0, 120, 212, 0.5);
   background: rgba(10, 26, 44, 0.9);
+  transform: scale(1.05);
+}
+
+.card-badge.platform-badge.itch {
+  border-color: rgba(250, 92, 92, 0.3);
+  color: #fa5c5c;
+  background: rgba(45, 20, 25, 0.75);
+}
+.card-badge.platform-badge.itch:hover {
+  border-color: rgba(250, 92, 92, 0.6);
+  background: rgba(45, 20, 25, 0.95);
+  transform: scale(1.05);
+}
+
+.card-badge.platform-badge.stove {
+  border-color: rgba(255, 90, 0, 0.3);
+  color: #ff7012;
+  background: rgba(45, 25, 15, 0.75);
+}
+.card-badge.platform-badge.stove:hover {
+  border-color: rgba(255, 90, 0, 0.6);
+  background: rgba(45, 25, 15, 0.95);
   transform: scale(1.05);
 }
 

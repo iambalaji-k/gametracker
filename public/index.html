@@ -50,7 +50,7 @@
       <div class="sidebar-footer">
         <div class="sync-status offline" id="connection-status">
           <span class="status-dot"></span>
-          <span id="connection-text">Local Storage Mode</span>
+          <span id="connection-text">Database Connected</span>
         </div>
       </div>
     </aside>
@@ -89,6 +89,9 @@
               </button>
               <button class="sync-menu-item" data-sync="GOG" role="menuitem">
                 <i data-lucide="gamepad-2"></i><span>Sync GOG</span>
+              </button>
+              <button class="sync-menu-item" data-sync="Stove" role="menuitem">
+                <i data-lucide="gamepad-2"></i><span>Sync Stove</span>
               </button>
             </div>
           </div>
@@ -136,6 +139,8 @@
           <button class="tab-btn" data-filter="Legacy">Legacy</button>
           <button class="tab-btn" data-filter="Luna">Luna</button>
           <button class="tab-btn" data-filter="Microsoft Store">Microsoft Store</button>
+          <button class="tab-btn" data-filter="Itch.io">Itch.io</button>
+          <button class="tab-btn" data-filter="Stove">Stove</button>
           <button class="tab-btn" data-filter="other">Other</button>
         </div>
 
@@ -258,6 +263,34 @@
                   <div class="profile-info">
                     <h4 id="resolved-gog-name">GOG Account</h4>
                     <p id="resolved-gog-id" class="help-text">Username: balajikalidasan28_</p>
+                  </div>
+                  <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
+                </div>
+              </div>
+
+              <!-- STOVE Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="gamepad" class="inline-icon" style="color: #ff6b00;"></i> STOVE Integration</h3>
+                <p class="section-desc">Enter your STOVE Member No or Profile URL to import your STOVE library (e.g. 249980712 or profile URL).</p>
+                
+                <div class="form-group">
+                  <label for="stove-member-no">STOVE Profile / Member ID</label>
+                  <div class="input-with-button">
+                    <input type="text" id="stove-member-no" placeholder="e.g. 249980712 or https://profile.onstove.com/en/249980712/game...">
+                    <button class="btn btn-secondary" id="save-stove-btn">Apply</button>
+                  </div>
+                  <p class="help-text">
+                    <i data-lucide="info" class="tiny-icon"></i> You can paste either your full STOVE profile link or your numeric Member ID.
+                  </p>
+                </div>
+                
+                <div class="profile-resolved-card hidden" id="resolved-stove-card">
+                  <div class="profile-avatar-placeholder" style="background-color: rgba(255, 107, 0, 0.1); border-color: rgba(255, 107, 0, 0.3); color: #ff6b00;">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-stove-name">STOVE Account</h4>
+                    <p id="resolved-stove-id" class="help-text">Member ID: 249980712</p>
                   </div>
                   <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
                 </div>
@@ -482,6 +515,8 @@
                 <option value="Legacy">Legacy Games</option>
                 <option value="Amazon Gaming">Amazon Gaming</option>
                 <option value="Microsoft Store">Microsoft Store</option>
+                <option value="Itch.io">Itch.io</option>
+                <option value="Stove">Stove</option>
                 <option value="Other">Other / Custom</option>
               </select>
             </div>

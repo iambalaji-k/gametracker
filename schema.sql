@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
   gog_username TEXT,
   epic_connected BOOLEAN DEFAULT false,
   legacy_connected BOOLEAN DEFAULT false,
+  stove_member_no TEXT,
   blacklist_app_ids JSONB DEFAULT '[]'::jsonb,
   blacklist_titles JSONB DEFAULT '[]'::jsonb,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
