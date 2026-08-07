@@ -550,6 +550,123 @@
     </div>
   </div>
 
+  <!-- Edit Game Sidebar Overlay -->
+  <div class="modal-overlay" id="edit-game-modal">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h2><i data-lucide="edit-3" class="settings-title-icon"></i> Edit Game Details</h2>
+        <button class="close-btn" id="close-edit-game-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="settings-body">
+        <!-- Live Preview Card -->
+        <div class="settings-section" style="margin-bottom: 1.25rem;">
+          <div id="edit-game-preview-card" style="position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-glass); background: var(--bg-card); min-height: 120px; display: flex; flex-direction: column; justify-content: flex-end; padding: 1rem;">
+            <div id="edit-game-preview-backdrop" style="position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0.35; filter: blur(2px);"></div>
+            <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.4));"></div>
+            <div style="position: relative; z-index: 2; display: flex; gap: 0.85rem; align-items: center;">
+              <img id="edit-game-preview-img" src="" alt="Cover" style="width: 52px; height: 75px; object-fit: cover; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); border: 1px solid var(--border-glass);">
+              <div>
+                <h3 id="edit-game-preview-title" style="font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 700; margin: 0; color: #fff;">Game Title</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem;">
+                  <span id="edit-game-preview-platform" class="badge" style="font-size: 0.75rem; padding: 0.2rem 0.6rem;">Platform</span>
+                  <span id="edit-game-preview-playtime" style="font-size: 0.8rem; color: var(--text-muted);"><i data-lucide="clock" class="inline-icon" style="width: 12px; height: 12px;"></i> 0 hrs</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Store Catalog Artwork Search -->
+        <div class="settings-section">
+          <h3><i data-lucide="search" class="inline-icon" style="color: #63b3ed;"></i> Search Database Artwork</h3>
+          <p class="section-desc">Search Steam or IGDB to auto-fetch official cover poster & backdrop art.</p>
+          <div class="form-group">
+            <div class="input-with-button" style="display: flex; gap: 0.5rem;">
+              <select id="edit-search-source-select" class="styled-select" style="max-width: 100px; padding: 0.5rem; background-color: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-main); font-family: inherit; font-size: 0.85rem;">
+                <option value="steam">Steam</option>
+                <option value="igdb">IGDB</option>
+              </select>
+              <input type="text" id="edit-search-input" placeholder="Search title..." style="flex-grow: 1;">
+              <button class="btn btn-secondary" id="edit-search-btn" type="button">Search</button>
+            </div>
+            <div id="edit-search-results" class="search-results-list hidden"></div>
+          </div>
+        </div>
+
+        <hr class="settings-divider">
+
+        <!-- Edit Form -->
+        <div class="settings-section">
+          <h3><i data-lucide="sliders" class="inline-icon"></i> Edit Game Metadata</h3>
+          <p class="section-desc">Modify details, artwork, playtime, or platform settings.</p>
+          
+          <form id="edit-game-form">
+            <input type="hidden" id="edit-game-orig-platform">
+            <input type="hidden" id="edit-game-orig-ext-id">
+
+            <div class="form-group">
+              <label for="edit-game-title">Game Title *</label>
+              <input type="text" id="edit-game-title" required placeholder="e.g. Cyberpunk 2077">
+            </div>
+
+            <div class="form-group">
+              <label for="edit-game-platform">Platform *</label>
+              <select id="edit-game-platform" class="styled-select" style="width: 100%;">
+                <option value="Steam">Steam</option>
+                <option value="GOG">GOG</option>
+                <option value="Epic">Epic</option>
+                <option value="Legacy">Legacy Games</option>
+                <option value="Amazon Gaming">Amazon Gaming</option>
+                <option value="Microsoft Store">Microsoft Store</option>
+                <option value="Itch.io">Itch.io</option>
+                <option value="Stove">Stove</option>
+                <option value="Other">Other / Custom</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="edit-game-cover">Cover Image URL (Vertical Poster 600x900)</label>
+              <input type="text" id="edit-game-cover" placeholder="https://domain.com/cover.jpg">
+            </div>
+
+            <div class="form-group">
+              <label for="edit-game-backdrop">Backdrop Image URL (Landscape Hero Banner)</label>
+              <input type="text" id="edit-game-backdrop" placeholder="https://domain.com/hero.jpg">
+            </div>
+
+            <div class="form-group">
+              <label for="edit-game-playtime">Playtime (Hours)</label>
+              <input type="number" id="edit-game-playtime" min="0" value="0" step="0.1">
+            </div>
+
+            <div class="form-group">
+              <label for="edit-game-lastplayed">Last Played Date</label>
+              <input type="date" id="edit-game-lastplayed">
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem;">
+              <button type="submit" class="btn btn-primary" style="width: 100%;">
+                <i data-lucide="save"></i> Save Changes
+              </button>
+              
+              <div style="display: flex; gap: 0.75rem;">
+                <button type="button" class="btn btn-secondary" id="edit-game-blacklist-btn" style="flex: 1; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b; background-color: rgba(245, 158, 11, 0.08); transition: all 0.2s ease;">
+                  <i data-lucide="slash" class="inline-icon"></i> Blacklist
+                </button>
+                <button type="button" class="btn btn-secondary" id="edit-game-delete-btn" style="flex: 1; border-color: rgba(244, 63, 94, 0.4); color: #f43f5e; background-color: rgba(244, 63, 94, 0.08); transition: all 0.2s ease;">
+                  <i data-lucide="trash-2" class="inline-icon"></i> Delete
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js?v=1.9"></script>
 </body>
 </html>

@@ -1630,10 +1630,211 @@ function extractStoveMemberNo(input) {
       e.stopPropagation();
       const platform = editCoverBtn.getAttribute('data-platform');
       const externalId = editCoverBtn.getAttribute('data-external-id');
-      changeCoverArt(platform, externalId);
+      openEditGameSidebar(platform, externalId);
       return;
     }
   });
+
+  // Edit Game Sidebar Modal Listeners
+  const editGameModal = document.getElementById('edit-game-modal');
+  const closeEditGameBtn = document.getElementById('close-edit-game-btn');
+  const editGameForm = document.getElementById('edit-game-form');
+  const editGameBlacklistBtn = document.getElementById('edit-game-blacklist-btn');
+  const editGameDeleteBtn = document.getElementById('edit-game-delete-btn');
+  const editSearchInput = document.getElementById('edit-search-input');
+  const editSearchSourceSelect = document.getElementById('edit-search-source-select');
+  const editSearchBtn = document.getElementById('edit-search-btn');
+  const editSearchResults = document.getElementById('edit-search-results');
+
+  if (closeEditGameBtn && editGameModal) {
+    closeEditGameBtn.addEventListener('click', () => {
+      editGameModal.classList.remove('open');
+    });
+    editGameModal.addEventListener('click', (e) => {
+      if (e.target === editGameModal) {
+        editGameModal.classList.remove('open');
+      }
+    });
+  }
+
+  // Edit Game Search Artwork trigger
+  if (editSearchBtn && editSearchInput) {
+    editSearchBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const term = editSearchInput.value.trim();
+      if (!term) {
+        showToast('Please enter a game name to search artwork', 'info');
+        return;
+      }
+
+      const source = editSearchSourceSelect.value;
+      editSearchBtn.disabled = true;
+      editSearchBtn.textContent = 'Searching...';
+      editSearchResults.innerHTML = '';
+      editSearchResults.classList.add('hidden');
+
+      try {
+        const endpoint = source === 'igdb' ? '/api/igdb/search' : '/api/steam/search';
+        const response = await fetch(`${endpoint}?term=${encodeURIComponent(term)}`);
+        if (!response.ok) throw new Error('Search failed');
+        const items = await response.json();
+
+        if (items.length === 0) {
+          editSearchResults.innerHTML = `<div style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-muted);">No artwork found on ${source === 'igdb' ? 'IGDB' : 'Steam'}.</div>`;
+          editSearchResults.classList.remove('hidden');
+          return;
+        }
+
+        items.slice(0, 5).forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'search-result-item';
+          div.innerHTML = `
+            <img class="search-result-img" src="${item.tiny_image}" alt="${item.name}">
+            <span class="search-result-name">${item.name}</span>
+          `;
+          div.addEventListener('click', () => {
+            const coverInput = document.getElementById('edit-game-cover');
+            const backdropInput = document.getElementById('edit-game-backdrop');
+            
+            if (item.cover_url) coverInput.value = item.cover_url;
+            if (item.backdrop_url) backdropInput.value = item.backdrop_url;
+            
+            editSearchResults.classList.add('hidden');
+            showToast(`Applied artwork for "${item.name}"!`, 'info');
+            
+            coverInput.dispatchEvent(new Event('input'));
+          });
+          editSearchResults.appendChild(div);
+        });
+        editSearchResults.classList.remove('hidden');
+      } catch (err) {
+        showToast(`Artwork search failed: ${err.message}`, 'error');
+      } finally {
+        editSearchBtn.disabled = false;
+        editSearchBtn.textContent = 'Search';
+      }
+    });
+  }
+
+  // Edit Game Form Submit (Save Changes)
+  if (editGameForm) {
+    editGameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const origPlatform = document.getElementById('edit-game-orig-platform').value;
+      const origExtId = document.getElementById('edit-game-orig-ext-id').value;
+
+      const game = appState.games.find(g => g.platform === origPlatform && String(g.external_id) === String(origExtId));
+      if (!game) return;
+
+      const newTitle = document.getElementById('edit-game-title').value.trim();
+      const newPlatform = document.getElementById('edit-game-platform').value;
+      const newCover = document.getElementById('edit-game-cover').value.trim() || null;
+      const newBackdrop = document.getElementById('edit-game-backdrop').value.trim() || null;
+      const newHours = parseFloat(document.getElementById('edit-game-playtime').value) || 0;
+      const newLastPlayedDate = document.getElementById('edit-game-lastplayed').value;
+
+      // Update game object in state
+      game.name = newTitle;
+      game.platform = newPlatform;
+      game.cover_url = newCover;
+      game.backdrop_url = newBackdrop;
+      game.playtime_forever = Math.round(newHours * 60);
+
+      if (newLastPlayedDate) {
+        game.rtime_last_played = Math.floor(new Date(newLastPlayedDate).getTime() / 1000);
+      }
+
+      saveSettingsToStorage();
+
+      // Cloud DB Sync
+      if (appState.supabaseConfig.enabled && supabaseClient) {
+        try {
+          if (origPlatform !== newPlatform) {
+            await supabaseClient
+              .from('games')
+              .delete()
+              .match({ platform: origPlatform, external_id: String(origExtId) });
+          }
+
+          const row = {
+            external_id: String(game.external_id),
+            platform: game.platform,
+            title: game.name,
+            playtime_forever: game.playtime_forever,
+            last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
+            cover_url: game.cover_url,
+            backdrop_url: game.backdrop_url
+          };
+
+          const { error } = await supabaseClient
+            .from('games')
+            .upsert(row, { onConflict: 'platform,external_id' });
+
+          if (error) throw error;
+          showToast(`Saved changes for "${game.name}" in database!`, 'success');
+        } catch (err) {
+          console.error(err);
+          showToast(`Cloud update failed: ${err.message}`, 'error');
+        }
+      } else {
+        showToast(`Saved changes for "${game.name}"!`, 'success');
+      }
+
+      editGameModal.classList.remove('open');
+      renderGames();
+      updateStats();
+    });
+  }
+
+  // Edit Game Blacklist Action
+  if (editGameBlacklistBtn) {
+    editGameBlacklistBtn.addEventListener('click', () => {
+      const origPlatform = document.getElementById('edit-game-orig-platform').value;
+      const origExtId = document.getElementById('edit-game-orig-ext-id').value;
+      const game = appState.games.find(g => g.platform === origPlatform && String(g.external_id) === String(origExtId));
+      if (!game) return;
+
+      editGameModal.classList.remove('open');
+      deleteAndIgnoreGame(origPlatform, origExtId, game.name);
+    });
+  }
+
+  // Edit Game Delete Action
+  if (editGameDeleteBtn) {
+    editGameDeleteBtn.addEventListener('click', async () => {
+      const origPlatform = document.getElementById('edit-game-orig-platform').value;
+      const origExtId = document.getElementById('edit-game-orig-ext-id').value;
+      const game = appState.games.find(g => g.platform === origPlatform && String(g.external_id) === String(origExtId));
+      if (!game) return;
+
+      if (!confirm(`Are you sure you want to delete "${game.name}" from your library?`)) {
+        return;
+      }
+
+      appState.games = appState.games.filter(g => !(g.platform === origPlatform && String(g.external_id) === String(origExtId)));
+      saveSettingsToStorage();
+
+      if (appState.supabaseConfig.enabled && supabaseClient) {
+        try {
+          const { error } = await supabaseClient
+            .from('games')
+            .delete()
+            .match({ platform: origPlatform, external_id: String(origExtId) });
+          if (error) throw error;
+          showToast(`Deleted "${game.name}" from cloud database!`, 'success');
+        } catch (err) {
+          console.error(err);
+          showToast(`Failed to delete from database: ${err.message}`, 'error');
+        }
+      } else {
+        showToast(`Deleted "${game.name}" from library.`, 'success');
+      }
+
+      editGameModal.classList.remove('open');
+      renderGames();
+      updateStats();
+    });
+  }
 
   // Export JSON Backup
   if (exportBackupBtn) {
@@ -2021,6 +2222,12 @@ async function syncGogLibraryCore() {
     
     const gogGames = data.games;
     
+    // Check existing GOG games in appState to preserve already-upgraded artwork
+    const existingGogMap = new Map();
+    appState.games.filter(g => g.platform === 'GOG').forEach(g => {
+      existingGogMap.set(String(g.external_id), g);
+    });
+
     const newGogGames = gogGames
       .filter(game => !shouldExcludeGame(game.name, game.appid))
       .map(game => {
@@ -2028,19 +2235,22 @@ async function syncGogLibraryCore() {
         if (cover.startsWith('//')) {
           cover = 'https:' + cover;
         }
+        const extId = String(game.appid);
+        const existing = existingGogMap.get(extId);
+
         return {
-          external_id: String(game.appid),
+          external_id: extId,
           platform: 'GOG',
           appid: game.appid,
           name: game.name,
           playtime_forever: game.playtime_forever,
           rtime_last_played: 0,
-          cover_url: cover
+          cover_url: (existing && existing.cover_url) ? existing.cover_url : cover,
+          backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
         };
       });
 
-    // Resolve a landscape backdrop via Steam/IGDB search (GOG has no native hero art).
-    // Only fall back to a vertical cover when GOG itself provided none.
+    // Automatically resolve vertical covers & landscape backdrops via Steam/IGDB search
     const gogBatchSize = 10;
     for (let i = 0; i < newGogGames.length; i += gogBatchSize) {
       const batch = newGogGames.slice(i, i + gogBatchSize);
@@ -2052,7 +2262,7 @@ async function syncGogLibraryCore() {
             if (coverData.backdrop_url) {
               game.backdrop_url = coverData.backdrop_url;
             }
-            if (!game.cover_url && coverData.cover_url) {
+            if (coverData.cover_url) {
               game.cover_url = coverData.cover_url;
             }
           }
@@ -2554,46 +2764,83 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
-// Change Cover Art for a specific game manually
-window.changeCoverArt = async (platform, externalId) => {
+// Open Edit Game Sidebar Modal (uses same slide-over settings-panel UI as Add Game)
+window.openEditGameSidebar = (platform, externalId) => {
   const game = appState.games.find(g => g.platform === platform && String(g.external_id) === String(externalId));
   if (!game) return;
 
-  const currentCover = game.cover_url || '';
-  const newUrl = prompt(`Enter new cover image URL for "${game.name}":`, currentCover);
-  
-  if (newUrl === null) return; // User cancelled
+  const editModal = document.getElementById('edit-game-modal');
+  const origPlatformInput = document.getElementById('edit-game-orig-platform');
+  const origExtIdInput = document.getElementById('edit-game-orig-ext-id');
+  const titleInput = document.getElementById('edit-game-title');
+  const platformSelect = document.getElementById('edit-game-platform');
+  const coverInput = document.getElementById('edit-game-cover');
+  const backdropInput = document.getElementById('edit-game-backdrop');
+  const playtimeInput = document.getElementById('edit-game-playtime');
+  const lastPlayedInput = document.getElementById('edit-game-lastplayed');
+  const searchInput = document.getElementById('edit-search-input');
+  const searchResults = document.getElementById('edit-search-results');
 
-  game.cover_url = newUrl.trim() || null;
-  saveSettingsToStorage();
-  
-  // If Supabase is connected, sync this single game change
-  if (appState.supabaseConfig.enabled && supabaseClient) {
-    try {
-      const row = {
-        external_id: String(game.external_id),
-        platform: game.platform,
-        title: game.name,
-        playtime_forever: game.playtime_forever,
-        last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-        cover_url: game.cover_url
-      };
-      
-      const { error } = await supabaseClient
-        .from('games')
-        .upsert(row, { onConflict: 'platform,external_id' });
-        
-      if (error) throw error;
-      showToast(`Updated cover for ${game.name} in cloud database!`, 'success');
-    } catch (e) {
-      console.error(e);
-      showToast(`Failed to update cloud database: ${e.message}`, 'error');
-    }
+  // Preview elements
+  const prevTitle = document.getElementById('edit-game-preview-title');
+  const prevPlatform = document.getElementById('edit-game-preview-platform');
+  const prevPlaytime = document.getElementById('edit-game-preview-playtime');
+  const prevImg = document.getElementById('edit-game-preview-img');
+  const prevBackdrop = document.getElementById('edit-game-preview-backdrop');
+
+  origPlatformInput.value = game.platform;
+  origExtIdInput.value = game.external_id;
+  titleInput.value = game.name;
+  platformSelect.value = game.platform;
+  coverInput.value = game.cover_url || '';
+  backdropInput.value = game.backdrop_url || '';
+  playtimeInput.value = (game.playtime_forever / 60).toFixed(1);
+
+  if (game.rtime_last_played) {
+    const d = new Date(game.rtime_last_played * 1000);
+    const dateStr = d.toISOString().split('T')[0];
+    lastPlayedInput.value = dateStr;
   } else {
-    showToast(`Updated cover for ${game.name} locally!`, 'success');
+    lastPlayedInput.value = '';
   }
-  
-  renderGames();
+
+  searchInput.value = game.name;
+  searchResults.innerHTML = '';
+  searchResults.classList.add('hidden');
+
+  function updatePreview() {
+    prevTitle.textContent = titleInput.value || game.name;
+    prevPlatform.textContent = platformSelect.value || game.platform;
+    const hrs = parseFloat(playtimeInput.value) || 0;
+    prevPlaytime.innerHTML = `<i data-lucide="clock" class="inline-icon" style="width: 12px; height: 12px;"></i> ${hrs.toFixed(1)} hrs`;
+    
+    const coverUrl = coverInput.value.trim();
+    prevImg.src = coverUrl || NO_COVER_PLACEHOLDER;
+    
+    const backdropUrl = backdropInput.value.trim();
+    if (backdropUrl) {
+      prevBackdrop.style.backgroundImage = `url("${backdropUrl}")`;
+      prevBackdrop.style.display = 'block';
+    } else {
+      prevBackdrop.style.backgroundImage = 'none';
+    }
+    lucide.createIcons();
+  }
+
+  updatePreview();
+
+  // Attach live update handlers
+  [titleInput, platformSelect, coverInput, backdropInput, playtimeInput].forEach(el => {
+    el.oninput = updatePreview;
+    el.onchange = updatePreview;
+  });
+
+  editModal.classList.add('open');
+  lucide.createIcons();
+};
+
+window.changeCoverArt = (platform, externalId) => {
+  window.openEditGameSidebar(platform, externalId);
 };
 
 // Check if game should be excluded by title keyword or blacklist

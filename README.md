@@ -16,6 +16,8 @@ This repository is configured for a **fully online, single-user deployment** usi
   - **GOG Sync**: Import GOG games using your GOG username.
   - **Epic & Legacy Games Extractor**: Easy-to-use console scripts to scrape and import purchases directly.
   - **Supabase Cloud Sync**: Sync settings (Steam/GOG profiles, blacklists) and your game collection to a Postgres cloud database.
+- 📝 **Edit Game Sidebar**: Full-featured slide-over drawer (using the sleek settings-panel design system) to edit game titles, platforms, playtimes, last played dates, vertical covers, and hero backdrops with live artwork previews and quick blacklist/delete controls.
+- 🎨 **Smart GOG Cover Art Auto-Upgrade**: Automatic resolution and preservation of high-definition 600x900 vertical poster art and landscape hero banners during GOG syncs without resetting to default GOG horizontal thumbnails.
 - 🔍 **Search & Filters**: Fast search matching along with tabbed platform filters (Steam, GOG, Epic, Legacy, Other) and multiple sorting combinations.
 - 🏷️ **Manual Entries**: Add custom games (e.g. Amazon Gaming, Microsoft Store, Custom platforms) and resolve cover art from IGDB or Steam.
 - 🎨 **Visual details**: Custom high-quality gamepad SVG favicon featuring the theme's Electric Violet to Cyber Cyan brand gradient, matching the app's dark-mode aesthetic.
