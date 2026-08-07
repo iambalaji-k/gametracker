@@ -1014,17 +1014,27 @@ function extractStoveMemberNo(input) {
       showToast(`Pasted ${parsed.length} games. Resolving cover arts via Steam API...`, 'info');
       
       // Map JSON properties to our internal format
+      const existingEpicMap = new Map();
+      appState.games.filter(g => g.platform === 'Epic').forEach(g => {
+        existingEpicMap.set(String(g.external_id), g);
+      });
+
       const newEpicGames = parsed
         .filter(game => !shouldExcludeGame(game.title, game.id))
-        .map(game => ({
-          external_id: game.id || String(Math.floor(Math.random() * 1000000)),
-          platform: 'Epic',
-          appid: game.id || '',
-          name: game.title,
-          playtime_forever: 0, // Playtime not available in Epic transaction logs
-          rtime_last_played: game.date ? Math.floor(new Date(game.date).getTime() / 1000) : 0,
-        cover_url: null
-      }));
+        .map(game => {
+          const extId = game.id || String(Math.floor(Math.random() * 1000000));
+          const existing = existingEpicMap.get(extId);
+          return {
+            external_id: extId,
+            platform: 'Epic',
+            appid: game.id || '',
+            name: game.title,
+            playtime_forever: (existing && existing.playtime_forever) ? existing.playtime_forever : 0,
+            rtime_last_played: game.date ? Math.floor(new Date(game.date).getTime() / 1000) : ((existing && existing.rtime_last_played) ? existing.rtime_last_played : 0),
+            cover_url: (existing && existing.cover_url) ? existing.cover_url : null,
+            backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
+          };
+        });
 
       // Resolve cover arts in parallel chunks to avoid server overloading
       const batchSize = 10;
@@ -1109,17 +1119,27 @@ function extractStoveMemberNo(input) {
 
       showToast(`Pasted ${parsed.length} games. Resolving cover arts via Steam API...`, 'info');
       
+      const existingLegacyMap = new Map();
+      appState.games.filter(g => g.platform === 'Legacy').forEach(g => {
+        existingLegacyMap.set(String(g.external_id), g);
+      });
+
       const newLegacyGames = parsed
         .filter(game => !shouldExcludeGame(game.title, game.id))
-        .map(game => ({
-          external_id: game.id || String(Math.floor(Math.random() * 1000000)),
-          platform: 'Legacy',
-          appid: game.id || '',
-          name: game.title,
-          playtime_forever: 0,
-          rtime_last_played: 0,
-          cover_url: null
-        }));
+        .map(game => {
+          const extId = game.id || String(Math.floor(Math.random() * 1000000));
+          const existing = existingLegacyMap.get(extId);
+          return {
+            external_id: extId,
+            platform: 'Legacy',
+            appid: game.id || '',
+            name: game.title,
+            playtime_forever: (existing && existing.playtime_forever) ? existing.playtime_forever : 0,
+            rtime_last_played: (existing && existing.rtime_last_played) ? existing.rtime_last_played : 0,
+            cover_url: (existing && existing.cover_url) ? existing.cover_url : null,
+            backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
+          };
+        });
 
       // Resolve covers in batches
       const batchSize = 10;
@@ -2319,6 +2339,11 @@ async function syncStoveLibraryCore() {
       throw new Error('No games returned. STOVE profile might be private.');
     }
 
+    const existingStoveMap = new Map();
+    appState.games.filter(g => g.platform === 'Stove').forEach(g => {
+      existingStoveMap.set(String(g.external_id), g);
+    });
+
     const stoveGames = data.games;
     const newStoveGames = stoveGames
       .filter(game => !shouldExcludeGame(game.name, game.appid))
@@ -2327,14 +2352,18 @@ async function syncStoveLibraryCore() {
         if (cover.startsWith('//')) {
           cover = 'https:' + cover;
         }
+        const extId = String(game.appid);
+        const existing = existingStoveMap.get(extId);
+
         return {
-          external_id: String(game.appid),
+          external_id: extId,
           platform: 'Stove',
           appid: game.appid,
           name: game.name,
           playtime_forever: game.playtime_forever || 0,
           rtime_last_played: game.rtime_last_played || 0,
-          cover_url: cover
+          cover_url: (existing && existing.cover_url) ? existing.cover_url : cover,
+          backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
         };
       });
 
