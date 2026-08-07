@@ -2544,6 +2544,7 @@ function getPlatformBadgeHtml(platform) {
 
 // Render Games Grid
 function renderGames() {
+  updateStats();
   gamesGrid.innerHTML = '';
   
   if (appState.games.length === 0) {
@@ -2572,6 +2573,12 @@ function renderGames() {
     return matchesSearch && matchesTab;
   });
 
+  // Helper to strip leading articles ('The ', 'A ', 'An ') for Steam-style alphabetical sorting
+  const getSortableName = (name) => {
+    if (!name) return '';
+    return name.replace(/^(the|a|an)\s+/i, '').trim();
+  };
+
   // Sort games
   filteredGames.sort((a, b) => {
     if (appState.sortKey === 'playtime-desc') {
@@ -2581,9 +2588,15 @@ function renderGames() {
     } else if (appState.sortKey === 'lastplayed-desc') {
       return b.rtime_last_played - a.rtime_last_played;
     } else if (appState.sortKey === 'name-asc') {
-      return a.name.localeCompare(b.name);
+      const sortA = getSortableName(a.name);
+      const sortB = getSortableName(b.name);
+      const comp = sortA.localeCompare(sortB, undefined, { sensitivity: 'base', numeric: true });
+      return comp !== 0 ? comp : a.name.localeCompare(b.name);
     } else if (appState.sortKey === 'name-desc') {
-      return b.name.localeCompare(a.name);
+      const sortA = getSortableName(a.name);
+      const sortB = getSortableName(b.name);
+      const comp = sortB.localeCompare(sortA, undefined, { sensitivity: 'base', numeric: true });
+      return comp !== 0 ? comp : b.name.localeCompare(a.name);
     }
     return 0;
   });
@@ -2695,18 +2708,40 @@ function handleCoverError(imgElement, platform, externalId, name) {
   }
 }
 
-// Update Stats Dashboard Summary
+// Helper to get games matching the selected store/platform tab (ignoring search queries)
+function getTabFilteredGames() {
+  if (!appState.games || appState.games.length === 0) return [];
+  if (appState.filters === 'all') {
+    return appState.games;
+  }
+  return appState.games.filter(game => {
+    if (appState.filters === 'other') {
+      const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna', 'Itch.io', 'itch.io', 'Stove'];
+      return !knownPlatforms.includes(game.platform) && game.platform?.toLowerCase() !== 'itch.io';
+    } else if (appState.filters === 'Luna') {
+      return game.platform === 'Luna' || game.platform === 'Amazon Gaming';
+    } else if (appState.filters === 'Itch.io') {
+      return game.platform === 'Itch.io' || game.platform?.toLowerCase() === 'itch.io';
+    } else {
+      return game.platform === appState.filters;
+    }
+  });
+}
+
+// Update Stats Dashboard Summary (based strictly on active store/platform filter tab)
 function updateStats() {
-  if (appState.games.length === 0) {
+  const tabGames = getTabFilteredGames();
+
+  if (tabGames.length === 0) {
     statTotalGames.textContent = '0';
     statTotalHours.textContent = '0 hrs';
     return;
   }
 
-  const totalGames = appState.games.length;
+  const totalGames = tabGames.length;
 
   // Hours
-  const totalMinutes = appState.games.reduce((sum, g) => sum + g.playtime_forever, 0);
+  const totalMinutes = tabGames.reduce((sum, g) => sum + g.playtime_forever, 0);
   const totalHours = Math.round(totalMinutes / 60);
 
   statTotalGames.textContent = totalGames.toLocaleString();
