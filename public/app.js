@@ -2164,23 +2164,30 @@ async function syncSteamLibraryCore() {
       throw new Error('No games returned. Make sure your Steam Profile is Public.');
     }
     
-    const steamGames = data.response.games;
-    
+    // Check existing Steam games in appState to preserve manually edited artwork
+    const existingSteamMap = new Map();
+    appState.games.filter(g => g.platform === 'Steam').forEach(g => {
+      existingSteamMap.set(String(g.external_id), g);
+    });
+
     const newSteamGames = steamGames
       .filter(game => !shouldExcludeGame(game.name, game.appid))
       .map(game => {
         const appid = game.appid;
-        const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`;
-        const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_hero.jpg`;
+        const defaultCoverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`;
+        const defaultBackdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_hero.jpg`;
+        const extId = String(game.appid);
+        const existing = existingSteamMap.get(extId);
+
         return {
-          external_id: String(game.appid),
+          external_id: extId,
           platform: 'Steam',
           appid: game.appid,
           name: game.name,
           playtime_forever: game.playtime_forever,
           rtime_last_played: game.rtime_last_played || 0,
-          cover_url: coverUrl,
-          backdrop_url: backdropUrl
+          cover_url: (existing && existing.cover_url) ? existing.cover_url : defaultCoverUrl,
+          backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : defaultBackdropUrl
         };
       });
 
