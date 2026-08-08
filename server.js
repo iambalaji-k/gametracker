@@ -354,6 +354,29 @@ async function getTwitchAccessToken() {
   }
 }
 
+function generateSearchTerms(rawName) {
+  const terms = [];
+  const base = String(rawName || '')
+    .replace(/[®™©]/g, '')
+    .replace(/\+\s*(Campaigns|DLC|Expansion|Bonus|Extra|Pack|Edition).*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  if (base) terms.push(base);
+
+  if (base.includes(':')) {
+    const mainTitle = base.split(':')[0].trim();
+    if (mainTitle.length >= 3 && mainTitle !== base) terms.push(mainTitle);
+    const subTitle = base.split(':')[1].replace(/\d{4}-\d{4}/g, '').trim();
+    if (subTitle.length >= 3 && subTitle !== base) terms.push(subTitle);
+  }
+
+  const rawClean = String(rawName || '').replace(/[®™©]/g, '').trim();
+  if (rawClean && !terms.includes(rawClean)) terms.push(rawClean);
+
+  return terms;
+}
+
 // Endpoint to search Steam store catalog for a game title and resolve its AppID & vertical cover art (with IGDB fallback)
 app.get('/api/games/search-cover', async (req, res) => {
   const { name } = req.query;
@@ -361,78 +384,101 @@ app.get('/api/games/search-cover', async (req, res) => {
     return res.status(400).json({ error: 'name query parameter is required' });
   }
 
-  try {
-    // 1. Try Steam first
-    const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(name)}&l=english&cc=US`;
-    const response = await fetchWithTimeout(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
+  const searchTerms = generateSearchTerms(name);
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.items && data.items.length > 0) {
-        const item = data.items[0];
-        const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_600x900.jpg`;
-        const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_hero.jpg`;
-        return res.json({
-          appid: item.id,
-          title: item.name,
-          cover_url: coverUrl,
-          backdrop_url: backdropUrl,
-          source: 'Steam'
-        });
+  try {
+    // 1. Try Steam store search across term variations
+    for (const term of searchTerms) {
+      const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=US`;
+      const response = await fetchWithTimeout(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.items && data.items.length > 0) {
+          const normName = name.toLowerCase().trim();
+          const candidates = [...data.items].sort((a, b) => {
+            const aExact = a.name.toLowerCase().trim() === normName ? 0 : 1;
+            const bExact = b.name.toLowerCase().trim() === normName ? 0 : 1;
+            return aExact - bExact;
+          });
+
+          for (const item of candidates) {
+            const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_600x900.jpg`;
+            const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_hero.jpg`;
+
+            try {
+              const checkRes = await fetchWithTimeout(backdropUrl, { method: 'HEAD' }, 3000);
+              if (checkRes.ok) {
+                return res.json({
+                  appid: item.id,
+                  title: item.name,
+                  cover_url: coverUrl,
+                  backdrop_url: backdropUrl,
+                  source: 'Steam'
+                });
+              }
+            } catch (e) {
+              // Check next candidate
+            }
+          }
+        }
       }
     }
 
-    // 2. Fall back to IGDB if keys are configured
+    // 2. Fall back to IGDB if keys are configured across term variations
     const clientId = process.env.TWITCH_CLIENT_ID;
     const clientSecret = process.env.TWITCH_CLIENT_SECRET;
     if (clientId && clientSecret) {
       try {
         const token = await getTwitchAccessToken();
-        const query = `search "${escapeIgdbString(name)}"; fields name, cover.url, screenshots.url; limit 1;`;
+        for (const term of searchTerms) {
+          const query = `search "${escapeIgdbString(term)}"; fields name, cover.url, screenshots.url, artworks.url; limit 1;`;
 
-        const igdbRes = await fetchWithTimeout('https://api.igdb.com/v4/games', {
-          method: 'POST',
-          headers: {
-            'Client-ID': clientId,
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json',
-            'Content-Type': 'text/plain'
-          },
-          body: query
-        });
+          const igdbRes = await fetchWithTimeout('https://api.igdb.com/v4/games', {
+            method: 'POST',
+            headers: {
+              'Client-ID': clientId,
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json',
+              'Content-Type': 'text/plain'
+            },
+            body: query
+          });
 
-        if (igdbRes.ok) {
-          const games = await igdbRes.json();
-          if (games && games.length > 0) {
-            const game = games[0];
-            let coverUrl = null;
-            if (game.cover && game.cover.url) {
-              let url = game.cover.url;
-              if (url.startsWith('//')) {
-                url = 'https:' + url;
+          if (igdbRes.ok) {
+            const games = await igdbRes.json();
+            if (games && games.length > 0) {
+              const game = games[0];
+              let coverUrl = null;
+              if (game.cover && game.cover.url) {
+                let url = game.cover.url;
+                if (url.startsWith('//')) {
+                  url = 'https:' + url;
+                }
+                coverUrl = url.replace('t_thumb', 't_cover_big');
               }
-              coverUrl = url.replace('t_thumb', 't_cover_big');
-            }
-            // Use the first IGDB screenshot as a landscape backdrop when available
-            let backdropUrl = null;
-            if (game.screenshots && game.screenshots.length > 0) {
-              let sUrl = game.screenshots[0].url;
-              if (sUrl.startsWith('//')) {
-                sUrl = 'https:' + sUrl;
+              let backdropUrl = null;
+              if (game.artworks && game.artworks.length > 0) {
+                let aUrl = game.artworks[0].url;
+                if (aUrl.startsWith('//')) aUrl = 'https:' + aUrl;
+                backdropUrl = aUrl.replace('t_thumb', 't_1080p');
+              } else if (game.screenshots && game.screenshots.length > 0) {
+                let sUrl = game.screenshots[0].url;
+                if (sUrl.startsWith('//')) sUrl = 'https:' + sUrl;
+                backdropUrl = sUrl.replace('t_thumb', 't_1080p');
               }
-              backdropUrl = sUrl.replace('t_thumb', 't_720p');
+              return res.json({
+                appid: 'igdb_' + game.id,
+                title: game.name,
+                cover_url: coverUrl,
+                backdrop_url: backdropUrl,
+                source: 'IGDB'
+              });
             }
-            return res.json({
-              appid: 'igdb_' + game.id,
-              title: game.name,
-              cover_url: coverUrl,
-              backdrop_url: backdropUrl,
-              source: 'IGDB'
-            });
           }
         }
       } catch (err) {

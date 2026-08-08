@@ -840,6 +840,43 @@ function setupEventListeners() {
     }
   });
 
+  // Platform OS detection for search shortcut badge label
+  const searchKbd = document.getElementById('search-kbd');
+  const isMac = typeof navigator !== 'undefined' && (
+    (navigator.platform && navigator.platform.toUpperCase().indexOf('MAC') >= 0) ||
+    (navigator.userAgent && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0)
+  );
+  if (searchKbd) {
+    searchKbd.textContent = isMac ? '⌘K' : 'Ctrl+K';
+  }
+
+  // Global Keyboard Shortcuts for Search (Ctrl+K / Cmd+K / Slash key / Escape)
+  document.addEventListener('keydown', (e) => {
+    const activeEl = document.activeElement;
+    const isInputActive = activeEl && (
+      activeEl.tagName === 'INPUT' || 
+      activeEl.tagName === 'TEXTAREA' || 
+      activeEl.isContentEditable
+    );
+
+    // Ctrl+K or Cmd+K
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    } 
+    // "/" key (when not already typing inside an input or textarea)
+    else if (e.key === '/' && !isInputActive) {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    } 
+    // Escape key (blurs search input when focused)
+    else if (e.key === 'Escape' && activeEl === searchInput) {
+      searchInput.blur();
+    }
+  });
+
   // Search, Filter & Sort
   searchInput.addEventListener('input', (e) => {
     appState.searchQuery = e.target.value.toLowerCase();
@@ -1556,9 +1593,48 @@ function extractStoveMemberNo(input) {
     }
   });
 
-  // Refresh Artwork & Backdrops: populate backdrop_url (and missing covers) for ALL games
-  // without a full resync. Steam derives its hero art directly from the AppID (no network);
-  // other platforms resolve via Steam/IGDB search.
+  // Helper to verify if an image URL actually loads cleanly (not 404/broken)
+  // Fast image validator with memoization cache and 1500ms timeout
+  const imageValidationCache = new Map();
+  function isImageValid(url) {
+    if (!url || typeof url !== 'string' || !url.trim()) return Promise.resolve(false);
+    const trimmed = url.trim();
+    if (imageValidationCache.has(trimmed)) {
+      return Promise.resolve(imageValidationCache.get(trimmed));
+    }
+    return new Promise((resolve) => {
+      const img = new Image();
+      let done = false;
+      const timer = setTimeout(() => {
+        if (!done) {
+          done = true;
+          img.src = '';
+          imageValidationCache.set(trimmed, false);
+          resolve(false);
+        }
+      }, 1500);
+      img.onload = () => {
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          imageValidationCache.set(trimmed, true);
+          resolve(true);
+        }
+      };
+      img.onerror = () => {
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          imageValidationCache.set(trimmed, false);
+          resolve(false);
+        }
+      };
+      img.src = trimmed;
+    });
+  }
+
+  // Refresh & Repair Backdrops: populate or replace ONLY missing or invalid (broken 404) backdrops.
+  // NEVER modifies cover_url!
   refreshArtworkBtn.addEventListener('click', async () => {
     if (appState.games.length === 0) {
       showToast('Your library is empty. Sync a platform first!', 'info');
@@ -1566,39 +1642,60 @@ function extractStoveMemberNo(input) {
     }
 
     refreshArtworkBtn.disabled = true;
-    refreshArtworkBtn.innerHTML = '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Refreshing artwork...';
+    refreshArtworkBtn.innerHTML = '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Checking & repairing backdrops...';
     lucide.createIcons();
-    showToast(`Refreshing artwork & backdrops for ${appState.games.length} games...`, 'info');
+    showToast(`Checking backdrops for ${appState.games.length} games...`, 'info');
 
     let resolvedCount = 0;
-    const batchSize = 10;
+    const batchSize = 30; // Increased concurrency from 10 to 30 for maximum speed
     for (let i = 0; i < appState.games.length; i += batchSize) {
       const batch = appState.games.slice(i, i + batchSize);
       await Promise.all(batch.map(async game => {
         try {
+          // 1. Check if current backdrop URL is valid
+          const currentUrl = game.backdrop_url ? String(game.backdrop_url).trim() : null;
+          const isCurrentValid = currentUrl ? await isImageValid(currentUrl) : false;
+
+          if (isCurrentValid) {
+            // Backdrop is already valid and working! Skip.
+            return;
+          }
+
+          // 2. Backdrop is missing or broken -> attempt repair/fetch
+          let candidateBackdrop = null;
+
+          // For Steam games, test native hero URL first if current isn't already set to it
           if (game.platform === 'Steam' && game.appid) {
-            const heroUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/library_hero.jpg`;
-            if (!game.backdrop_url || String(game.backdrop_url).trim() !== heroUrl) {
-              game.backdrop_url = heroUrl;
-              resolvedCount++;
-            }
-          } else {
-            const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
-            if (res.ok) {
-              const data = await res.json();
-              let changed = false;
-              if (data.backdrop_url && data.backdrop_url !== game.backdrop_url) {
-                game.backdrop_url = data.backdrop_url;
-                changed = true;
-              }
-              if (!game.cover_url && data.cover_url) {
-                game.cover_url = data.cover_url;
-                changed = true;
-              }
-              if (changed) resolvedCount++;
+            const steamHero = `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/library_hero.jpg`;
+            if (currentUrl !== steamHero && await isImageValid(steamHero)) {
+              candidateBackdrop = steamHero;
             }
           }
 
+          // If still no valid backdrop candidate, query IGDB / Steam store search API
+          if (!candidateBackdrop) {
+            const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.backdrop_url && data.backdrop_url !== currentUrl && await isImageValid(data.backdrop_url)) {
+                candidateBackdrop = data.backdrop_url;
+              }
+            }
+          }
+
+          // 3. Apply backdrop change if found, or clear broken URL if unfixable
+          if (candidateBackdrop) {
+            game.backdrop_url = candidateBackdrop;
+            resolvedCount++;
+          } else if (currentUrl) {
+            // Current URL was broken (404) and no replacement was found; clear it so UI can fallback
+            game.backdrop_url = null;
+            resolvedCount++;
+          } else {
+            return; // Was missing and still couldn't find one, no DB write needed
+          }
+
+          // Sync backdrop change to Supabase (WITHOUT touching cover_url)
           if (appState.supabaseConfig.enabled && supabaseClient) {
             const row = {
               external_id: String(game.external_id),
@@ -1614,7 +1711,7 @@ function extractStoveMemberNo(input) {
               .upsert(row, { onConflict: 'platform,external_id' });
           }
         } catch (e) {
-          console.error(`Failed to refresh artwork for ${game.name}:`, e);
+          console.error(`Failed to repair backdrop for ${game.name}:`, e);
         }
       }));
     }
@@ -1625,13 +1722,13 @@ function extractStoveMemberNo(input) {
     updateStats();
 
     refreshArtworkBtn.disabled = false;
-    refreshArtworkBtn.innerHTML = '<i data-lucide="image" class="inline-icon"></i> Refresh Artwork & Backdrops';
+    refreshArtworkBtn.innerHTML = '<i data-lucide="image" class="inline-icon"></i> Refresh & Repair Backdrops';
     lucide.createIcons();
 
     if (resolvedCount > 0) {
-      showToast(`Refreshed artwork & backdrops for ${resolvedCount} games!`, 'success');
+      showToast(`Repaired & updated backdrops for ${resolvedCount} games!`, 'success');
     } else {
-      showToast('All games already have artwork & backdrops.', 'info');
+      showToast('All game backdrops are already valid and working!', 'info');
     }
   });
 
@@ -2172,6 +2269,48 @@ async function fetchGamesFromSupabase() {
   }
 }
 
+// Asynchronously verify Steam backdrop URLs and fall back to IGDB if Steam library_hero.jpg returns 404
+async function verifyAndFixSteamBackdrops(gamesToVerify) {
+  let fixedCount = 0;
+  for (const game of gamesToVerify) {
+    if (game.backdrop_url) {
+      const isValid = await isImageValid(game.backdrop_url);
+      if (!isValid) {
+        try {
+          const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.backdrop_url && await isImageValid(data.backdrop_url)) {
+              game.backdrop_url = data.backdrop_url;
+              fixedCount++;
+              if (appState.supabaseConfig.enabled && supabaseClient) {
+                await supabaseClient.from('games').upsert({
+                  external_id: String(game.external_id),
+                  platform: game.platform,
+                  title: game.name,
+                  playtime_forever: game.playtime_forever,
+                  last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
+                  cover_url: game.cover_url,
+                  backdrop_url: game.backdrop_url
+                }, { onConflict: 'platform,external_id' });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`IGDB backdrop fallback failed for ${game.name}:`, e);
+        }
+      }
+    }
+  }
+
+  if (fixedCount > 0) {
+    saveSettingsToStorage();
+    renderGames();
+    updateStageBackground();
+    console.log(`Resolved IGDB backdrops for ${fixedCount} Steam games with 404 hero images.`);
+  }
+}
+
 // Sync Steam Library
 async function syncSteamLibraryCore() {
   try {
@@ -2230,6 +2369,9 @@ async function syncSteamLibraryCore() {
     renderGames();
     updateStats();
     showToast(`Successfully synced ${newSteamGames.length} Steam games!`, 'success');
+
+    // Asynchronously check for 404 Steam hero backdrops and fallback to IGDB
+    verifyAndFixSteamBackdrops(newSteamGames).catch(console.error);
 
   } catch (err) {
     console.error(err);
