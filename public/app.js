@@ -888,12 +888,30 @@ function setupEventListeners() {
     renderGames();
   });
 
+  function syncFilterPressedState() {
+    filterBtns.forEach(b => {
+      const isActive = b.classList.contains('active');
+      b.setAttribute('aria-pressed', String(isActive));
+    });
+  }
+  syncFilterPressedState();
   filterBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
+      const target = e.currentTarget;
       filterBtns.forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      appState.filters = e.target.dataset.filter;
+      target.classList.add('active');
+      appState.filters = target.dataset.filter;
+      syncFilterPressedState();
       renderGames();
+    });
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const idx = Array.from(filterBtns).indexOf(e.currentTarget);
+        const next = filterBtns[(idx + dir + filterBtns.length) % filterBtns.length];
+        if (next) next.focus();
+      }
     });
   });
 
@@ -1249,21 +1267,60 @@ function extractStoveMemberNo(input) {
   });
   syncDropdownToggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isHidden = syncMenu.classList.toggle('hidden');
-    syncDropdownToggle.setAttribute('aria-expanded', String(!isHidden));
+    const willOpen = syncMenu.classList.contains('hidden');
+    if (willOpen) openSyncMenu();
+    else closeSyncMenu(false);
   });
-  syncMenu.querySelectorAll('.sync-menu-item').forEach(item => {
+  const syncMenuItems = Array.from(syncMenu.querySelectorAll('.sync-menu-item'));
+  function closeSyncMenu(returnFocus) {
+    syncMenu.classList.add('hidden');
+    syncDropdownToggle.setAttribute('aria-expanded', 'false');
+    if (returnFocus) syncDropdownToggle.focus();
+  }
+  function openSyncMenu() {
+    syncMenu.classList.remove('hidden');
+    syncDropdownToggle.setAttribute('aria-expanded', 'true');
+    if (syncMenuItems[0]) syncMenuItems[0].focus();
+  }
+  syncMenuItems.forEach(item => {
     item.addEventListener('click', () => {
       const platform = item.dataset.sync;
-      syncMenu.classList.add('hidden');
-      syncDropdownToggle.setAttribute('aria-expanded', 'false');
+      closeSyncMenu(false);
       triggerSync([platform]);
     });
   });
+  syncDropdownToggle.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (syncMenu.classList.contains('hidden')) openSyncMenu();
+    } else if (e.key === 'Escape') {
+      closeSyncMenu(true);
+    }
+  });
+  syncMenu.addEventListener('keydown', (e) => {
+    const idx = syncMenuItems.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = syncMenuItems[(idx + 1) % syncMenuItems.length];
+      if (next) next.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = syncMenuItems[(idx - 1 + syncMenuItems.length) % syncMenuItems.length];
+      if (prev) prev.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSyncMenu(true);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      if (syncMenuItems[0]) syncMenuItems[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      if (syncMenuItems[syncMenuItems.length - 1]) syncMenuItems[syncMenuItems.length - 1].focus();
+    }
+  });
   document.addEventListener('click', (e) => {
     if (!syncMenu.contains(e.target) && e.target !== syncDropdownToggle && !syncDropdownToggle.contains(e.target)) {
-      syncMenu.classList.add('hidden');
-      syncDropdownToggle.setAttribute('aria-expanded', 'false');
+      closeSyncMenu(false);
     }
   });
 
@@ -1732,6 +1789,15 @@ function extractStoveMemberNo(input) {
     }
   });
 
+  gamesGrid.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('game-card')) {
+      e.preventDefault();
+      const platform = e.target.getAttribute('data-platform');
+      const externalId = e.target.getAttribute('data-external-id');
+      if (platform && externalId) openEditGameSidebar(platform, externalId);
+    }
+  });
+
   // Click delegation on gamesGrid for delete and edit-cover buttons
   gamesGrid.addEventListener('click', (e) => {
     const deleteBtn = e.target.closest('.delete-game-btn');
@@ -1767,11 +1833,11 @@ function extractStoveMemberNo(input) {
 
   if (closeEditGameBtn && editGameModal) {
     closeEditGameBtn.addEventListener('click', () => {
-      editGameModal.classList.remove('open');
+      closeEditGameModal();
     });
     editGameModal.addEventListener('click', (e) => {
       if (e.target === editGameModal) {
-        editGameModal.classList.remove('open');
+        closeEditGameModal();
       }
     });
   }
@@ -2761,9 +2827,13 @@ function renderGames() {
 
   const fragment = document.createDocumentFragment();
 
-  filteredGames.forEach(game => {
+  filteredGames.forEach((game, index) => {
     const card = document.createElement('div');
     card.className = 'game-card';
+    const stagger = (index % 24);
+    const jitter = (index * 7) % 5;
+    card.style.setProperty('--card-index', String(stagger));
+    card.style.setProperty('--card-jitter', `${jitter}ms`);
     
     const playtimeHours = (game.playtime_forever / 60).toFixed(1);
     const lastPlayedText = game.rtime_last_played 
@@ -2778,14 +2848,19 @@ function renderGames() {
     const platformBadgeHtml = getPlatformBadgeHtml(game.platform);
     const coverPath = game.cover_url || '';
     
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-label', `${game.name} — ${game.platform}`);
+    card.setAttribute('data-platform', game.platform);
+    card.setAttribute('data-external-id', String(game.external_id));
     card.innerHTML = `
       <div class="game-cover-container">
         ${platformBadgeHtml}
-        <button class="edit-cover-btn" title="Edit Cover Art" data-platform="${game.platform}" data-external-id="${game.external_id}">
-          <i data-lucide="edit-3"></i>
+        <button class="edit-cover-btn" type="button" title="Edit Cover Art" aria-label="Edit ${game.name}" data-platform="${game.platform}" data-external-id="${game.external_id}">
+          <i data-lucide="edit-3" aria-hidden="true"></i>
         </button>
-        <button class="delete-game-btn" title="Delete & Ignore Game" data-platform="${game.platform}" data-external-id="${game.external_id}" data-name="${game.name.replace(/"/g, '&quot;')}">
-          <i data-lucide="trash-2"></i>
+        <button class="delete-game-btn" type="button" title="Delete & Ignore Game" aria-label="Delete ${game.name}" data-platform="${game.platform}" data-external-id="${game.external_id}" data-name="${game.name.replace(/"/g, '&quot;')}">
+          <i data-lucide="trash-2" aria-hidden="true"></i>
         </button>
         ${coverPath ? 
           `<img class="game-cover" 
@@ -2944,22 +3019,92 @@ function showPage(pageName) {
   }
 }
 
-// Add Game modal helpers
+let lastFocusedElement = null;
+let activeModal = null;
+
+function getFocusableElements(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+
+function trapFocus(e) {
+  if (!activeModal || e.key !== 'Tab') return;
+  const focusables = getFocusableElements(activeModal.querySelector('.settings-panel'));
+  if (focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+function handleModalEscape(e) {
+  if (e.key === 'Escape' && activeModal) {
+    e.preventDefault();
+    if (activeModal === addGameModal) closeAddGame();
+    else if (activeModal === document.getElementById('edit-game-modal')) closeEditGameModal();
+  }
+}
+
+function openModal(modal) {
+  lastFocusedElement = document.activeElement;
+  activeModal = modal;
+  modal.classList.add('open');
+  document.addEventListener('keydown', trapFocus);
+  document.addEventListener('keydown', handleModalEscape);
+  requestAnimationFrame(() => {
+    const focusables = getFocusableElements(modal.querySelector('.settings-panel'));
+    if (focusables[0]) focusables[0].focus();
+  });
+}
+
+function closeModal(modal) {
+  modal.classList.remove('open');
+  document.removeEventListener('keydown', trapFocus);
+  document.removeEventListener('keydown', handleModalEscape);
+  activeModal = null;
+  if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+  }
+  lastFocusedElement = null;
+}
+
 function openAddGame() {
-  addGameModal.classList.add('open');
+  openModal(addGameModal);
 }
 
 function closeAddGame() {
-  addGameModal.classList.remove('open');
+  if (!addGameModal.classList.contains('open')) return;
+  closeModal(addGameModal);
   steamSearchResults.innerHTML = '';
   steamSearchResults.classList.add('hidden');
+}
+
+function closeEditGameModal() {
+  const modal = document.getElementById('edit-game-modal');
+  if (!modal || !modal.classList.contains('open')) return;
+  const results = document.getElementById('edit-search-results');
+  if (results) {
+    results.innerHTML = '';
+    results.classList.add('hidden');
+  }
+  closeModal(modal);
 }
 
 // Toast notification helper
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
+  if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
   
   let icon = 'info';
   if (type === 'success') icon = 'check-circle';
@@ -2972,13 +3117,14 @@ function showToast(message, type = 'info') {
   
   container.appendChild(toast);
   lucide.createIcons();
-  
-  setTimeout(() => {
-    toast.style.animation = 'slideIn 0.3s reverse forwards';
-    toast.addEventListener('animationend', () => {
-      toast.remove();
-    });
-  }, 4000);
+
+  const removeToast = () => {
+    toast.style.animation = 'toastOut 220ms var(--ease-in-out) both';
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  };
+  setTimeout(removeToast, 3800);
+  toast.addEventListener('click', removeToast, { once: true });
+  toast.style.cursor = 'pointer';
 }
 
 // Open Edit Game Sidebar Modal (uses same slide-over settings-panel UI as Add Game)
@@ -3052,7 +3198,7 @@ function openEditGameSidebar(platform, externalId) {
     el.onchange = updatePreview;
   });
 
-  editModal.classList.add('open');
+  openModal(editModal);
   lucide.createIcons();
 }
 window.openEditGameSidebar = openEditGameSidebar;

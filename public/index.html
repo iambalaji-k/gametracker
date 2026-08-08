@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>CrossPlay - PC Game Tracker</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <!-- Google Fonts: Outfit for headers, Inter for UI -->
@@ -10,14 +10,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script defer src="https://unpkg.com/lucide@latest"></script>
   <!-- Supabase JS Client CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="style.css?v=2.8">
 </head>
 <body>
+  <a href="#library-view" class="skip-link">Skip to content</a>
   <!-- Toast Notification Container -->
-  <div id="toast-container" class="toast-container"></div>
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Background Ambient Glows -->
   <div class="ambient-glow glow-1"></div>
@@ -48,8 +49,8 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div class="sync-status offline" id="connection-status">
-          <span class="status-dot"></span>
+        <div class="sync-status offline" id="connection-status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
           <span id="connection-text">Database Connected</span>
         </div>
       </div>
@@ -68,21 +69,22 @@
         </div>
         <div class="navbar-right">
           <div class="search-box">
-            <i data-lucide="search" class="search-icon"></i>
-            <input type="text" id="search-input" placeholder="Search library...">
-            <kbd class="search-kbd" id="search-kbd">Ctrl+K</kbd>
+            <i data-lucide="search" class="search-icon" aria-hidden="true"></i>
+            <label for="search-input" class="sr-only">Search library</label>
+            <input type="text" id="search-input" placeholder="Search library..." aria-label="Search library" autocomplete="off">
+            <kbd class="search-kbd" id="search-kbd" aria-hidden="true">Ctrl+K</kbd>
           </div>
-          <button class="btn btn-secondary" id="add-game-btn">
-            <i data-lucide="plus"></i>
+          <button class="btn btn-secondary" id="add-game-btn" type="button" aria-label="Add game manually">
+            <i data-lucide="plus" aria-hidden="true"></i>
             <span>Add Game</span>
           </button>
           <div class="sync-group">
-            <button class="btn btn-primary sync-main" id="sync-all-btn">
-              <i data-lucide="refresh-cw" id="sync-all-icon"></i>
+            <button class="btn btn-primary sync-main" id="sync-all-btn" type="button" aria-label="Sync all configured libraries">
+              <i data-lucide="refresh-cw" id="sync-all-icon" aria-hidden="true"></i>
               <span>Sync Library</span>
             </button>
-            <button class="btn btn-primary sync-caret" id="sync-dropdown-toggle" title="Sync a single platform" aria-haspopup="true" aria-expanded="false">
-              <i data-lucide="chevron-down"></i>
+            <button class="btn btn-primary sync-caret" id="sync-dropdown-toggle" type="button" title="Sync a single platform" aria-label="Choose platform to sync" aria-haspopup="menu" aria-expanded="false">
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
             </button>
             <div class="sync-menu hidden" id="sync-menu" role="menu">
               <button class="sync-menu-item" data-sync="Steam" role="menuitem">
@@ -132,17 +134,17 @@
 
         <!-- Library Grid Controls -->
         <div class="library-controls">
-        <div class="filter-tabs">
-          <button class="tab-btn active" data-filter="all">All Games</button>
-          <button class="tab-btn" data-filter="Steam">Steam</button>
-          <button class="tab-btn" data-filter="GOG">GOG</button>
-          <button class="tab-btn" data-filter="Epic">Epic</button>
-          <button class="tab-btn" data-filter="Legacy">Legacy</button>
-          <button class="tab-btn" data-filter="Luna">Luna</button>
-          <button class="tab-btn" data-filter="Microsoft Store">Microsoft Store</button>
-          <button class="tab-btn" data-filter="Itch.io">Itch.io</button>
-          <button class="tab-btn" data-filter="Stove">Stove</button>
-          <button class="tab-btn" data-filter="other">Other</button>
+        <div class="filter-tabs" role="toolbar" aria-label="Filter by platform">
+          <button class="tab-btn active" type="button" data-filter="all" aria-pressed="true">All Games</button>
+          <button class="tab-btn" type="button" data-filter="Steam" aria-pressed="false">Steam</button>
+          <button class="tab-btn" type="button" data-filter="GOG" aria-pressed="false">GOG</button>
+          <button class="tab-btn" type="button" data-filter="Epic" aria-pressed="false">Epic</button>
+          <button class="tab-btn" type="button" data-filter="Legacy" aria-pressed="false">Legacy</button>
+          <button class="tab-btn" type="button" data-filter="Luna" aria-pressed="false">Luna</button>
+          <button class="tab-btn" type="button" data-filter="Microsoft Store" aria-pressed="false">Microsoft Store</button>
+          <button class="tab-btn" type="button" data-filter="Itch.io" aria-pressed="false">Itch.io</button>
+          <button class="tab-btn" type="button" data-filter="Stove" aria-pressed="false">Stove</button>
+          <button class="tab-btn" type="button" data-filter="other" aria-pressed="false">Other</button>
         </div>
 
         <div class="sort-options">
@@ -467,12 +469,12 @@
 </div>
 
   <!-- Add Game Modal Overlay -->
-  <div class="modal-overlay" id="add-game-modal">
+  <div class="modal-overlay" id="add-game-modal" role="dialog" aria-modal="true" aria-labelledby="add-game-title">
     <div class="settings-panel">
       <div class="settings-header">
-        <h2><i data-lucide="plus-circle" class="settings-title-icon"></i> Add Game Manually</h2>
-        <button class="close-btn" id="close-add-game-btn">
-          <i data-lucide="x"></i>
+        <h2 id="add-game-title"><i data-lucide="plus-circle" class="settings-title-icon"></i> Add Game Manually</h2>
+        <button class="close-btn" id="close-add-game-btn" type="button" aria-label="Close add game dialog">
+          <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
 
@@ -552,12 +554,12 @@
   </div>
 
   <!-- Edit Game Sidebar Overlay -->
-  <div class="modal-overlay" id="edit-game-modal">
+  <div class="modal-overlay" id="edit-game-modal" role="dialog" aria-modal="true" aria-labelledby="edit-game-title">
     <div class="settings-panel">
       <div class="settings-header">
-        <h2><i data-lucide="edit-3" class="settings-title-icon"></i> Edit Game Details</h2>
-        <button class="close-btn" id="close-edit-game-btn">
-          <i data-lucide="x"></i>
+        <h2 id="edit-game-title"><i data-lucide="edit-3" class="settings-title-icon"></i> Edit Game Details</h2>
+        <button class="close-btn" id="close-edit-game-btn" type="button" aria-label="Close edit game dialog">
+          <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
 
