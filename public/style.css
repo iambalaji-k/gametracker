@@ -1,37 +1,58 @@
 /* Custom Styling System for CrossPlay Game Tracker */
 
 :root {
-  /* HSL Color Palette - Gaming Dark Theme */
-  --bg-primary: hsl(230, 20%, 8%);
-  --bg-primary-edge: hsl(230, 22%, 6%);
-  --bg-secondary: hsl(230, 20%, 12%);
-  --bg-elevated: hsl(230, 18%, 14%); /* Brighter elevated surface for cards/stats/hero */
-  --bg-glass: rgba(255, 255, 255, 0.03);
-  --border-glass: rgba(255, 255, 255, 0.06);
-  --bg-glass-active: rgba(255, 255, 255, 0.08);
-  
-  --color-primary: hsl(265, 89%, 66%); /* Radiant Purple */
-  --color-primary-glow: hsla(265, 89%, 66%, 0.3);
-  --color-secondary: hsl(190, 90%, 50%); /* Cyber Cyan */
-  --color-success: hsl(145, 80%, 45%); /* Gamer Green */
+  /* Palette — deslop: tinted dark base (warm bone/oxide bias) instead of generic gaming neon */
+  --bg-primary: hsl(228, 16%, 8%);
+  --bg-primary-edge: hsl(228, 18%, 6%);
+  --bg-secondary: hsl(228, 14%, 12%);
+  --bg-elevated: hsl(228, 12%, 14%);
+  --bg-glass: rgba(245, 235, 220, 0.04);
+  --border-glass: rgba(245, 235, 220, 0.08);
+  --bg-glass-active: rgba(245, 235, 220, 0.09);
+
+  /* Primary is now ember (owned by CrossPlay, not by Gaming); cyan stays as the supporting signal */
+  --color-primary: hsl(24, 94%, 62%); /* Ember — warm counterweight to cover art, unguessable for gaming */
+  --color-primary-glow: hsla(24, 94%, 62%, 0.28);
+  --color-secondary: hsl(190, 88%, 52%); /* Cyan kept but desaturated slightly, supporting not dominant */
+  --color-success: hsl(145, 80%, 45%);
   --color-warning: hsl(40, 90%, 55%);
   --color-danger: hsl(0, 85%, 60%);
   --color-pink: hsl(320, 85%, 60%);
+
+  /* Platform tokens — collapse the 66 inline styles */
+  --platform-steam: #66c0f4;
+  --platform-steam-bg: #1b2838;
+  --platform-gog: hsl(280, 89%, 75%);
+  --platform-gog-bg: rgba(43, 24, 66, 0.75);
+  --platform-epic: #00f2fe;
+  --platform-epic-bg: rgba(10, 37, 44, 0.75);
+  --platform-stove: #ff6b00;
+  --platform-stove-bg: rgba(50, 20, 5, 0.75);
+  --platform-legacy: #f6ad55;
+  --platform-legacy-bg: rgba(44, 34, 24, 0.75);
+  --platform-amazon: #ff9900;
+  --platform-amazon-bg: rgba(44, 30, 10, 0.75);
+  --platform-microsoft: #0078d4;
+  --platform-microsoft-bg: rgba(10, 26, 44, 0.75);
+  --platform-itch: #fa5c5c;
+  --platform-itch-bg: rgba(45, 20, 25, 0.75);
+  --platform-other: #a0aec0;
+  --platform-other-bg: rgba(45, 55, 72, 0.75);
   
-  /* Typography Colors */
-  --text-main: hsl(210, 20%, 98%);
-  --text-muted: hsl(210, 10%, 65%);
-  --text-muted-2: hsl(213, 22%, 68%); /* ~#94A3B8 for card metadata */
-  --text-dark: hsl(230, 15%, 15%);
+  /* Typography Colors — warm bone tint on dark */
+  --text-main: hsl(40, 20%, 97%);
+  --text-muted: hsl(30, 10%, 64%);
+  --text-muted-2: hsl(30, 12%, 68%);
+  --text-dark: hsl(228, 15%, 15%);
   
   /* Radius System */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 14px;
   
-  /* Layered Shadow System */
+  /* Layered Shadow System — ember glow replaces purple glow */
   --shadow-card: 0 6px 16px rgba(0, 0, 0, 0.25), 0 14px 32px rgba(0, 0, 0, 0.18);
-  --shadow-card-hover: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 18px rgba(168, 85, 247, 0.18);
+  --shadow-card-hover: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 18px rgba(251, 124, 32, 0.16);
   --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.35);
   
   /* Spacing Scale */
@@ -295,8 +316,8 @@ body {
 
 .nav-item.active {
   color: var(--text-main);
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(168, 85, 247, 0.02) 100%);
-  border: 1px solid rgba(168, 85, 247, 0.25);
+  background: linear-gradient(135deg, hsla(24, 94%, 62%, 0.15) 0%, hsla(24, 94%, 62%, 0.02) 100%);
+  border: 1px solid hsla(24, 94%, 62%, 0.25);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
@@ -592,7 +613,7 @@ body {
 }
 
 .stat-icon-wrapper.purple {
-  background-color: hsla(265, 89%, 66%, 0.15);
+  background-color: hsla(24, 94%, 62%, 0.15);
   color: var(--color-primary);
 }
 
@@ -683,7 +704,7 @@ body {
 .tab-btn.active {
   background-color: var(--bg-glass-active);
   color: var(--text-main);
-  border-color: rgba(124, 58, 237, 0.35);
+  border-color: hsla(24, 94%, 62%, 0.35);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
@@ -858,16 +879,15 @@ body {
   to   { transform: var(--kb-to); }
 }
 
-/* Atmospheric grading that melts the artwork into the page: a whisper of
-   purple and cyan up top, settling to the body background at the bottom. */
+/* Atmospheric grading — ember up top (owned) over a desaturated cyan whisper, settling to bone-tinted dark */
 .page-scrim {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(900px 420px at 82% 12%, rgba(124, 58, 237, 0.14), transparent 70%),
-    radial-gradient(760px 520px at 10% 78%, rgba(34, 211, 238, 0.06), transparent 70%),
+    radial-gradient(900px 420px at 82% 12%, hsla(24, 94%, 62%, 0.13), transparent 70%),
+    radial-gradient(760px 520px at 10% 78%, hsla(190, 88%, 52%, 0.05), transparent 70%),
     linear-gradient(180deg, rgba(12, 14, 20, 0.35) 0%, rgba(18, 20, 28, 0.18) 30%, transparent 52%),
     linear-gradient(0deg,
       var(--bg-primary) 0%,
@@ -968,14 +988,14 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary) 0%, hsl(265, 80%, 55%) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, hsl(22, 92%, 55%) 100%);
   color: #fff;
   box-shadow: 0 4px 15px var(--color-primary-glow);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px hsla(265, 89%, 66%, 0.45);
+  box-shadow: 0 6px 20px hsla(24, 94%, 62%, 0.45);
 }
 
 .btn-primary:active {
@@ -1023,6 +1043,24 @@ body {
 .btn-secondary:hover {
   background-color: var(--bg-glass-active);
   border-color: rgba(255, 255, 255, 0.15);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+  filter: saturate(0.7);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.sync-menu-item:focus-visible,
+.search-result-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 #add-game-btn {
@@ -1145,7 +1183,7 @@ body {
 
 .game-card:hover {
   transform: translateY(-6px) scale(1.03);
-  border-color: rgba(168, 85, 247, 0.4);
+  border-color: hsla(24, 94%, 62%, 0.4);
   box-shadow: var(--shadow-card-hover);
 }
 
@@ -1593,10 +1631,18 @@ body {
 
 .empty-state p {
   color: var(--text-muted);
-  max-width: 400px;
+  max-width: 42ch;
   font-size: 0.95rem;
   margin-bottom: 1.5rem;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+.games-grid:empty {
+  min-height: 120px;
+}
+
+.loading-spinner-wrapper[aria-busy="true"] .spinner {
+  will-change: transform;
 }
 
 .sr-only {
@@ -1751,6 +1797,15 @@ body {
   border-color: var(--color-primary);
 }
 
+.form-group input:invalid:not(:placeholder-shown) {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.form-group input:user-invalid {
+  border-color: var(--color-danger);
+}
+
 .input-with-button {
   display: flex;
   gap: 0.5rem;
@@ -1799,8 +1854,8 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background-color: hsla(265, 89%, 66%, 0.1);
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  background-color: hsla(24, 94%, 62%, 0.1);
+  border: 1px solid hsla(24, 94%, 62%, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1870,7 +1925,7 @@ body {
 }
 
 input:checked + .slider {
-  background-color: hsla(265, 89%, 66%, 0.25);
+  background-color: hsla(24, 94%, 62%, 0.25);
   border-color: var(--color-primary);
 }
 
@@ -2870,10 +2925,10 @@ select.styled-select {
 
 .settings-nav-item.active {
   color: #fff;
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(0, 242, 254, 0.05) 100%);
-  border-color: rgba(168, 85, 247, 0.3);
-  box-shadow: 0 4px 15px rgba(168, 85, 247, 0.15), inset 0 0 8px rgba(168, 85, 247, 0.1);
-  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  background: linear-gradient(135deg, hsla(24, 94%, 62%, 0.2) 0%, rgba(0, 242, 254, 0.05) 100%);
+  border-color: hsla(24, 94%, 62%, 0.3);
+  box-shadow: 0 4px 15px hsla(24, 94%, 62%, 0.15), inset 0 0 8px hsla(24, 94%, 62%, 0.1);
+  text-shadow: 0 0 10px hsla(24, 94%, 62%, 0.5);
 }
 
 .settings-nav-item.active i {
@@ -2927,7 +2982,7 @@ select.styled-select {
 .settings-page .settings-section:hover {
   border-color: rgba(255, 255, 255, 0.1);
   background-color: rgba(255, 255, 255, 0.04);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(168, 85, 247, 0.05);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), 0 0 20px hsla(24, 94%, 62%, 0.05);
   transform: translateY(-2px);
 }
 
@@ -3010,7 +3065,7 @@ select.styled-select {
 .settings-page .styled-textarea:focus {
   border-color: var(--color-primary);
   background-color: rgba(0, 0, 0, 0.3);
-  box-shadow: 0 0 15px rgba(168, 85, 247, 0.15), inset 0 0 6px rgba(168, 85, 247, 0.1);
+  box-shadow: 0 0 15px hsla(24, 94%, 62%, 0.15), inset 0 0 6px hsla(24, 94%, 62%, 0.1);
 }
 
 /* Refined buttons */
@@ -3060,3 +3115,43 @@ select.styled-select {
     transform: none;
   }
 }
+
+
+/* Platform + accent tokens — extracted utility classes */
+.avatar-gog { background-color: hsla(280, 89%, 66%, 0.1); border-color: rgba(168, 85, 247, 0.3); color: hsl(280, 89%, 66%); }
+.badge-ready { background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2); }
+.accent-stove { color: var(--platform-stove); }
+.avatar-stove { background-color: rgba(255, 107, 0, 0.1); border-color: rgba(255, 107, 0, 0.3); color: var(--platform-stove); }
+.avatar-stove-sm { background-color: rgba(255, 107, 0, 0.1); border-color: rgba(255, 107, 0, 0.3); color: var(--platform-stove); }
+.accent-cyan { color: var(--color-secondary); }
+.btn-epic { width: 100%; background-color: hsla(190, 88%, 52%, 0.08); border-color: rgba(0, 242, 254, 0.25); color: var(--color-secondary); }
+.avatar-epic { background-color: hsla(190, 88%, 52%, 0.1); border-color: rgba(0, 242, 254, 0.3); color: var(--color-secondary); }
+.badge-epic { background-color: hsla(190, 88%, 52%, 0.15); color: var(--color-secondary); border-color: rgba(0, 242, 254, 0.2); }
+.accent-legacy { color: var(--platform-legacy); }
+.btn-legacy { width: 100%; background-color: rgba(246, 173, 85, 0.08); border-color: rgba(246, 173, 85, 0.25); color: var(--platform-legacy); }
+.avatar-legacy { background-color: rgba(246, 173, 85, 0.1); border-color: rgba(246, 173, 85, 0.3); color: var(--platform-legacy); }
+.badge-legacy { background-color: rgba(246, 173, 85, 0.15); color: var(--platform-legacy); border-color: rgba(246, 173, 85, 0.2); }
+.avatar-supabase { background-color: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); color: #3b82f6; }
+.avatar-igdb { background-color: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa; }
+.help-block { margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem; }
+.help-list { margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.btn-maint-green { width: 100%; border-color: rgba(16, 185, 129, 0.3); color: #10b981; background: rgba(16, 185, 129, 0.05); }
+.btn-maint-ember { width: 100%; margin-top: 0.75rem; border-color: hsla(24, 94%, 62%, 0.3); color: var(--color-primary); background: hsla(24, 94%, 62%, 0.05); }
+.btn-maint-cyan { width: 100%; margin-top: 0.75rem; border-color: rgba(99, 179, 237, 0.3); color: #63b3ed; background: rgba(99, 179, 237, 0.05); }
+.link-cyan { color: var(--color-secondary); text-decoration: underline; }
+.link-legacy { color: var(--platform-legacy); text-decoration: underline; }
+.btn-blacklist { flex: 1; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b; background: rgba(245, 158, 11, 0.08); transition: all 0.2s ease; }
+.btn-delete-danger { flex: 1; border-color: rgba(244, 63, 94, 0.4); color: #f43f5e; background: rgba(244, 63, 94, 0.08); transition: all 0.2s ease; }
+.select-compact { max-width: 100px; padding: 0.5rem; background-color: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-main); font-family: inherit; font-size: 0.85rem; }
+.badge-offline { background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2); }
+.card-glass { background: var(--bg-glass); border: 1px solid var(--border-glass); }
+.backup-row { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+.btn-backup-export { flex: 1; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; background: rgba(56, 189, 248, 0.05); transition: all 0.2s ease; }
+.btn-backup-import { flex: 1; border-color: rgba(244, 63, 94, 0.3); color: #f43f5e; background: rgba(244, 63, 94, 0.05); transition: all 0.2s ease; }
+.btn-full { width: 100%; margin-bottom: 0.75rem; }
+.accent-supabase { color: #3b82f6; }
+.accent-igdb { color: #a78bfa; }
+.accent-maint-green { color: #10b981; }
+.accent-maint-blue { color: #63b3ed; }
+.accent-backup { color: #38bdf8; }
+

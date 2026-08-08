@@ -34,7 +34,7 @@ function escapeIgdbString(value) {
 function extractStoveMemberNo(input) {
   if (!input) return '';
   const trimmed = String(input).trim();
-  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2}\/)?(\d+)/i);
+  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2,5}(?:[_-][a-z]{2,5})?\/)?(\d+)/i);
   if (urlMatch) {
     return urlMatch[1];
   }
@@ -387,6 +387,8 @@ app.get('/api/games/search-cover', async (req, res) => {
   const searchTerms = generateSearchTerms(name);
 
   try {
+    let steamCandidate = null;
+
     // 1. Try Steam store search across term variations
     for (const term of searchTerms) {
       const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=US`;
@@ -401,35 +403,65 @@ app.get('/api/games/search-cover', async (req, res) => {
         if (data && data.items && data.items.length > 0) {
           const normName = name.toLowerCase().trim();
           const candidates = [...data.items].sort((a, b) => {
-            const aExact = a.name.toLowerCase().trim() === normName ? 0 : 1;
-            const bExact = b.name.toLowerCase().trim() === normName ? 0 : 1;
+            const aExact = (a.name || '').toLowerCase().trim() === normName ? 0 : 1;
+            const bExact = (b.name || '').toLowerCase().trim() === normName ? 0 : 1;
             return aExact - bExact;
           });
 
-          for (const item of candidates) {
-            const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_600x900.jpg`;
-            const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_hero.jpg`;
+          // Check top 3 candidates concurrently to prevent sequential timeout delays
+          const topCandidates = candidates.slice(0, 3);
+          const candidateResults = await Promise.all(
+            topCandidates.map(async (item) => {
+              const itemName = item.name || name;
+              const coverUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_600x900.jpg`;
+              const backdropUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_hero.jpg`;
 
-            try {
-              const checkRes = await fetchWithTimeout(backdropUrl, { method: 'HEAD' }, 3000);
-              if (checkRes.ok) {
-                return res.json({
-                  appid: item.id,
-                  title: item.name,
-                  cover_url: coverUrl,
-                  backdrop_url: backdropUrl,
-                  source: 'Steam'
-                });
+              try {
+                const checkRes = await fetchWithTimeout(backdropUrl, { method: 'HEAD' }, 2500);
+                if (checkRes.ok) {
+                  return {
+                    appid: item.id,
+                    title: itemName,
+                    cover_url: coverUrl,
+                    backdrop_url: backdropUrl,
+                    source: 'Steam',
+                    hasHero: true
+                  };
+                }
+              } catch (e) {
+                // library_hero is missing or failed
               }
-            } catch (e) {
-              // Check next candidate
-            }
+
+              return {
+                appid: item.id,
+                title: itemName,
+                cover_url: coverUrl,
+                backdrop_url: null,
+                source: 'Steam',
+                hasHero: false
+              };
+            })
+          );
+
+          const heroMatch = candidateResults.find(c => c.hasHero);
+          if (heroMatch) {
+            return res.json({
+              appid: heroMatch.appid,
+              title: heroMatch.title,
+              cover_url: heroMatch.cover_url,
+              backdrop_url: heroMatch.backdrop_url,
+              source: heroMatch.source
+            });
+          }
+
+          if (!steamCandidate && candidateResults.length > 0) {
+            steamCandidate = candidateResults[0];
           }
         }
       }
     }
 
-    // 2. Fall back to IGDB if keys are configured across term variations
+    // 2. Fall back to IGDB if keys are configured and Steam hero was missing or Steam had no match
     const clientId = process.env.TWITCH_CLIENT_ID;
     const clientSecret = process.env.TWITCH_CLIENT_SECRET;
     if (clientId && clientSecret) {
@@ -471,12 +503,13 @@ app.get('/api/games/search-cover', async (req, res) => {
                 if (sUrl.startsWith('//')) sUrl = 'https:' + sUrl;
                 backdropUrl = sUrl.replace('t_thumb', 't_1080p');
               }
+
               return res.json({
-                appid: 'igdb_' + game.id,
-                title: game.name,
-                cover_url: coverUrl,
-                backdrop_url: backdropUrl,
-                source: 'IGDB'
+                appid: steamCandidate ? steamCandidate.appid : ('igdb_' + game.id),
+                title: steamCandidate ? steamCandidate.title : game.name,
+                cover_url: (steamCandidate && steamCandidate.cover_url) ? steamCandidate.cover_url : coverUrl,
+                backdrop_url: backdropUrl, // Landscape hero from IGDB (or null if IGDB also has none)
+                source: backdropUrl ? 'IGDB' : (steamCandidate ? 'Steam' : 'IGDB')
               });
             }
           }
@@ -486,7 +519,12 @@ app.get('/api/games/search-cover', async (req, res) => {
       }
     }
 
-    return res.json({ appid: null, cover_url: null });
+    // 3. Return Steam candidate with null backdrop_url if IGDB fallback failed or has no landscape hero
+    if (steamCandidate) {
+      return res.json(steamCandidate);
+    }
+
+    return res.json({ appid: null, cover_url: null, backdrop_url: null });
   } catch (error) {
     console.error('Error resolving game cover:', error);
     return res.status(500).json({ error: 'Failed to search cover art' });

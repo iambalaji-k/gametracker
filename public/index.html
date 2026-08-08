@@ -104,8 +104,8 @@
       <!-- Page-level cinematic backdrop — a background layer attached to the page,
            not a hero container. It extends beyond the viewport and melts away. -->
       <div class="backdrop-stage" aria-hidden="true">
-        <div class="backdrop-layer is-active" data-layer="0"><img class="backdrop-img" alt=""></div>
-        <div class="backdrop-layer" data-layer="1"><img class="backdrop-img" alt=""></div>
+        <div class="backdrop-layer is-active" data-layer="0"><img class="backdrop-img" alt="" loading="eager" fetchpriority="high" decoding="async"></div>
+        <div class="backdrop-layer" data-layer="1"><img class="backdrop-img" alt="" loading="lazy" decoding="async"></div>
         <div class="page-scrim"></div>
       </div>
 
@@ -161,8 +161,8 @@
 
       <!-- Games Grid -->
       <section class="games-grid-container">
-        <div id="games-loading" class="loading-spinner-wrapper hidden">
-          <div class="spinner"></div>
+        <div id="games-loading" class="loading-spinner-wrapper hidden" role="status" aria-live="polite" aria-busy="false">
+          <div class="spinner" aria-hidden="true"></div>
           <p id="loading-text">Syncing games from API...</p>
         </div>
         
@@ -260,20 +260,20 @@
                 </div>
                 
                 <div class="profile-resolved-card hidden" id="resolved-gog-card">
-                  <div class="profile-avatar-placeholder" style="background-color: hsla(280, 89%, 66%, 0.1); border-color: rgba(168, 85, 247, 0.3); color: hsl(280, 89%, 66%);">
+                  <div class="profile-avatar-placeholder avatar-gog">
                     <i data-lucide="user"></i>
                   </div>
                   <div class="profile-info">
                     <h4 id="resolved-gog-name">GOG Account</h4>
                     <p id="resolved-gog-id" class="help-text">Username: balajikalidasan28_</p>
                   </div>
-                  <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
+                  <div class="profile-status-badge badge-ready">Ready</div>
                 </div>
               </div>
 
               <!-- STOVE Configuration -->
               <div class="settings-section">
-                <h3><i data-lucide="gamepad" class="inline-icon" style="color: #ff6b00;"></i> STOVE Integration</h3>
+                <h3><i data-lucide="gamepad" class="inline-icon accent-stove"></i> STOVE Integration</h3>
                 <p class="section-desc">Enter your STOVE Member No or Profile URL to import your STOVE library (e.g. 249980712 or profile URL).</p>
                 
                 <div class="form-group">
@@ -288,14 +288,14 @@
                 </div>
                 
                 <div class="profile-resolved-card hidden" id="resolved-stove-card">
-                  <div class="profile-avatar-placeholder" style="background-color: rgba(255, 107, 0, 0.1); border-color: rgba(255, 107, 0, 0.3); color: #ff6b00;">
+                  <div class="profile-avatar-placeholder avatar-stove">
                     <i data-lucide="user"></i>
                   </div>
                   <div class="profile-info">
                     <h4 id="resolved-stove-name">STOVE Account</h4>
                     <p id="resolved-stove-id" class="help-text">Member ID: 249980712</p>
                   </div>
-                  <div class="profile-status-badge" style="background-color: hsla(145, 80%, 45%, 0.15); color: var(--color-success); border-color: rgba(34, 197, 94, 0.2);">Ready</div>
+                  <div class="profile-status-badge badge-ready">Ready</div>
                 </div>
               </div>
             </div>
@@ -304,13 +304,13 @@
             <div class="settings-tab-pane" id="tab-scripts">
               <!-- Epic Games Configuration -->
               <div class="settings-section">
-                <h3><i data-lucide="gamepad-2" class="inline-icon" style="color: var(--color-secondary);"></i> Epic Games Integration</h3>
+                <h3><i data-lucide="gamepad-2" class="inline-icon accent-cyan"></i> Epic Games Integration</h3>
                 <p class="section-desc">Epic Games does not have public profiles. Follow these secure steps to import your games:</p>
                 
-                <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
+                <div class="help-section help-block">
                   <p><strong>Instructions:</strong></p>
-                  <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
-                    <li>Log into <a href="https://www.epicgames.com/account/transactions" target="_blank" style="color: var(--color-secondary); text-decoration: underline;">Epic Transactions Page</a>.</li>
+                  <ol class="help-list">
+                    <li>Log into <a href="https://www.epicgames.com/account/transactions" target="_blank" class="link-cyan">Epic Transactions Page</a>.</li>
                     <li>Press <strong>F12</strong> to open the developer tools console.</li>
                     <li>Click **Copy Extractor Script** below, paste it into the console, and press **Enter**.</li>
                     <li>Once finished, copy the generated JSON text, paste it into the input box below, and click **Import**.</li>
@@ -318,7 +318,7 @@
                 </div>
 
                 <div class="form-group">
-                  <button class="btn btn-secondary" id="copy-epic-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
+                  <button class="btn btn-secondary btn-full" id="copy-epic-script-btn" style="width:100%;margin-bottom:0.75rem">
                     <i data-lucide="copy" class="inline-icon"></i> Copy Extractor Script
                   </button>
                   
@@ -326,31 +326,31 @@
                   <textarea id="epic-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Control", ...}]'></textarea>
                 </div>
 
-                <button class="btn btn-secondary" id="import-epic-btn" style="width: 100%; background-color: hsla(190, 90%, 50%, 0.08); border-color: rgba(0, 242, 254, 0.25); color: var(--color-secondary);">
+                <button class="btn btn-secondary btn-epic" id="import-epic-btn" style="width:100%">
                   <i data-lucide="file-input" class="inline-icon"></i> Import Epic Games Library
                 </button>
 
                 <div class="profile-resolved-card hidden" id="resolved-epic-card">
-                  <div class="profile-avatar-placeholder" style="background-color: hsla(190, 90%, 50%, 0.1); border-color: rgba(0, 242, 254, 0.3); color: var(--color-secondary);">
+                  <div class="profile-avatar-placeholder avatar-epic">
                     <i data-lucide="user"></i>
                   </div>
                   <div class="profile-info">
                     <h4 id="resolved-epic-name">Epic Games Account</h4>
                     <p id="resolved-epic-id" class="help-text">Sync Status: Synced Successfully</p>
                   </div>
-                  <div class="profile-status-badge" style="background-color: hsla(190, 90%, 50%, 0.15); color: var(--color-secondary); border-color: rgba(0, 242, 254, 0.2);">Ready</div>
+                  <div class="profile-status-badge badge-epic">Ready</div>
                 </div>
               </div>
 
               <!-- Legacy Games Configuration -->
               <div class="settings-section">
-                <h3><i data-lucide="gamepad" class="inline-icon" style="color: #f6ad55;"></i> Legacy Games Integration</h3>
+                <h3><i data-lucide="gamepad" class="inline-icon accent-legacy"></i> Legacy Games Integration</h3>
                 <p class="section-desc">Legacy Games manages purchases inside their account portal. Follow these steps to import:</p>
                 
-                <div class="help-section" style="margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem;">
+                <div class="help-section help-block">
                   <p><strong>Instructions:</strong></p>
-                  <ol style="margin-left: 1.15rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.35rem;">
-                    <li>Log into Legacy Games <a href="https://legacygames.com/my-account/downloads/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Downloads</a> or <a href="https://legacygames.com/my-account/free-games/" target="_blank" style="color: #f6ad55; text-decoration: underline;">Free Games</a>.</li>
+                  <ol class="help-list">
+                    <li>Log into Legacy Games <a href="https://legacygames.com/my-account/downloads/" target="_blank" class="link-legacy">Downloads</a> or <a href="https://legacygames.com/my-account/free-games/" target="_blank" class="link-legacy">Free Games</a>.</li>
                     <li>Press <strong>F12</strong> to open the developer tools console.</li>
                     <li>Click **Copy Legacy Extractor Script** below, paste it in the console, and press **Enter**.</li>
                     <li>Copy the generated JSON output, paste it below, and click **Import**.</li>
@@ -358,7 +358,7 @@
                 </div>
 
                 <div class="form-group">
-                  <button class="btn btn-secondary" id="copy-legacy-script-btn" style="width: 100%; margin-bottom: 0.75rem;">
+                  <button class="btn btn-secondary btn-full" id="copy-legacy-script-btn" style="width:100%;margin-bottom:0.75rem">
                     <i data-lucide="copy" class="inline-icon"></i> Copy Legacy Extractor Script
                   </button>
                   
@@ -366,19 +366,19 @@
                   <textarea id="legacy-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Sifu", ...}]'></textarea>
                 </div>
 
-                <button class="btn btn-secondary" id="import-legacy-btn" style="width: 100%; background-color: rgba(246, 173, 85, 0.08); border-color: rgba(246, 173, 85, 0.25); color: #f6ad55;">
+                <button class="btn btn-secondary btn-legacy" id="import-legacy-btn" style="width:100%">
                   <i data-lucide="file-input" class="inline-icon"></i> Import Legacy Games Library
                 </button>
 
                 <div class="profile-resolved-card hidden" id="resolved-legacy-card">
-                  <div class="profile-avatar-placeholder" style="background-color: rgba(246, 173, 85, 0.1); border-color: rgba(246, 173, 85, 0.3); color: #f6ad55;">
+                  <div class="profile-avatar-placeholder avatar-legacy">
                     <i data-lucide="user"></i>
                   </div>
                   <div class="profile-info">
                     <h4 id="resolved-legacy-name">Legacy Games Account</h4>
                     <p id="resolved-legacy-id" class="help-text">Sync Status: Synced Successfully</p>
                   </div>
-                  <div class="profile-status-badge" style="background-color: rgba(246, 173, 85, 0.15); color: #f6ad55; border-color: rgba(246, 173, 85, 0.2);">Ready</div>
+                  <div class="profile-status-badge badge-legacy">Ready</div>
                 </div>
               </div>
             </div>
@@ -387,37 +387,37 @@
             <div class="settings-tab-pane" id="tab-cloud">
               <!-- Supabase Configuration -->
               <div class="settings-section">
-                <h3><i data-lucide="cloud" class="inline-icon" style="color: #3b82f6;"></i> Supabase Integration (Cloud Sync)</h3>
+                <h3><i data-lucide="cloud" class="inline-icon accent-supabase"></i> Supabase Integration (Cloud Sync)</h3>
                 <p class="section-desc">Database configurations are loaded automatically from the server's <code class="highlight-code">.env</code> file.</p>
                 
                 <div class="form-group">
-                  <div id="supabase-env-status" class="profile-resolved-card" style="margin-top: 0.5rem; background: var(--bg-glass); border: 1px solid var(--border-glass);">
-                    <div class="profile-avatar-placeholder" id="supabase-status-avatar" style="background-color: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); color: #3b82f6;">
+                  <div id="supabase-env-status" class="profile-resolved-card card-glass" style="margin-top:0.5rem">
+                    <div class="profile-avatar-placeholder avatar-supabase" id="supabase-status-avatar">
                       <i data-lucide="cloud-off" id="supabase-status-icon"></i>
                     </div>
                     <div class="profile-info">
                       <h4>Supabase Cloud Sync</h4>
                       <p id="supabase-env-text" class="help-text">Checking database status...</p>
                     </div>
-                    <div class="profile-status-badge" id="supabase-status-badge" style="background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">Offline</div>
+                    <div class="profile-status-badge badge-offline" id="supabase-status-badge">Offline</div>
                   </div>
                 </div>
               </div>
 
               <!-- IGDB Configuration Status -->
               <div class="settings-section">
-                <h3><i data-lucide="key" class="inline-icon" style="color: #a78bfa;"></i> IGDB API Status</h3>
+                <h3><i data-lucide="key" class="inline-icon accent-igdb"></i> IGDB API Status</h3>
                 <p class="section-desc">Twitch Developer credentials used for IGDB fallback game search and cover resolution are loaded from your local <code class="highlight-code">.env</code> file.</p>
                 <div class="form-group">
-                  <div id="igdb-env-status" class="profile-resolved-card" style="margin-top: 0.5rem; background: var(--bg-glass); border: 1px solid var(--border-glass);">
-                    <div class="profile-avatar-placeholder" id="igdb-status-avatar" style="background-color: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa;">
+                  <div id="igdb-env-status" class="profile-resolved-card card-glass" style="margin-top:0.5rem">
+                    <div class="profile-avatar-placeholder avatar-igdb" id="igdb-status-avatar">
                       <i data-lucide="shield-alert" id="igdb-status-icon"></i>
                     </div>
                     <div class="profile-info">
                       <h4>IGDB Search Integration</h4>
                       <p id="igdb-env-text" class="help-text">Checking credentials status...</p>
                     </div>
-                    <div class="profile-status-badge" id="igdb-status-badge" style="background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">Offline</div>
+                    <div class="profile-status-badge badge-offline" id="igdb-status-badge">Offline</div>
                   </div>
                 </div>
               </div>
@@ -433,28 +433,28 @@
             <div class="settings-tab-pane" id="tab-maintenance">
               <!-- Library Maintenance Tools -->
               <div class="settings-section">
-                <h3><i data-lucide="wrench" class="inline-icon" style="color: #10b981;"></i> Library Maintenance</h3>
+                <h3><i data-lucide="wrench" class="inline-icon accent-maint-green"></i> Library Maintenance</h3>
                 <p class="section-desc">Utility actions to update and clean up your games collection.</p>
-                <button class="btn btn-secondary" id="resolve-covers-btn" style="width: 100%; border-color: rgba(16, 185, 129, 0.3); color: #10b981; background-color: rgba(16, 185, 129, 0.05); transition: all 0.2s ease;">
+                <button class="btn btn-secondary btn-maint-green" id="resolve-covers-btn">
                   <i data-lucide="image-down" class="inline-icon"></i> Scan & Resolve Missing Covers
                 </button>
-                <button class="btn btn-secondary" id="resolve-gog-covers-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(168, 85, 247, 0.3); color: var(--color-primary); background-color: rgba(168, 85, 247, 0.05); transition: all 0.2s ease;">
+                <button class="btn btn-secondary btn-maint-ember" id="resolve-gog-covers-btn">
                   <i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)
                 </button>
-                <button class="btn btn-secondary" id="refresh-artwork-btn" style="width: 100%; margin-top: 0.75rem; border-color: rgba(99, 179, 237, 0.3); color: #63b3ed; background-color: rgba(99, 179, 237, 0.05); transition: all 0.2s ease;">
+                <button class="btn btn-secondary btn-maint-cyan" id="refresh-artwork-btn">
                   <i data-lucide="image" class="inline-icon"></i> Refresh & Repair Backdrops
                 </button>
               </div>
 
               <!-- Data Backup & Restore -->
               <div class="settings-section" style="margin-top: 1.5rem;">
-                <h3><i data-lucide="download" class="inline-icon" style="color: #38bdf8;"></i> Backup & Restore</h3>
+                <h3><i data-lucide="download" class="inline-icon accent-backup"></i> Backup & Restore</h3>
                 <p class="section-desc">Download a copy of your library and settings as a JSON file, or restore from a backup.</p>
-                <div style="display: flex; gap: 0.75rem; margin-top: 0.75rem;">
-                  <button class="btn btn-secondary" id="export-backup-btn" style="flex: 1; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; background-color: rgba(56, 189, 248, 0.05); transition: all 0.2s ease;">
+                <div class="backup-row">
+                  <button class="btn btn-secondary btn-backup-export" id="export-backup-btn">
                     <i data-lucide="download" class="inline-icon"></i> Export JSON Backup
                   </button>
-                  <button class="btn btn-secondary" id="import-backup-btn" style="flex: 1; border-color: rgba(244, 63, 94, 0.3); color: #f43f5e; background-color: rgba(244, 63, 94, 0.05); transition: all 0.2s ease;">
+                  <button class="btn btn-secondary btn-backup-import" id="import-backup-btn">
                     <i data-lucide="upload" class="inline-icon"></i> Import JSON Backup
                   </button>
                 </div>
@@ -481,15 +481,15 @@
       <div class="settings-body">
         <!-- Store Catalog Search -->
         <div class="settings-section">
-          <h3><i data-lucide="search" class="inline-icon" style="color: #63b3ed;"></i> Search Database</h3>
+          <h3><i data-lucide="search" class="inline-icon accent-maint-blue"></i> Search Database</h3>
           <p class="section-desc">Search Steam or IGDB to auto-fill details and cover art for the game.</p>
           <div class="form-group">
             <div class="input-with-button" style="display: flex; gap: 0.5rem;">
-              <select id="search-source-select" class="styled-select" style="max-width: 100px; padding: 0.5rem; background-color: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-main); font-family: inherit; font-size: 0.85rem;">
+              <select id="search-source-select" class="styled-select select-compact" aria-label="Search source database">
                 <option value="steam">Steam</option>
                 <option value="igdb">IGDB</option>
               </select>
-              <input type="text" id="steam-search-input" placeholder="e.g. Witcher 3" style="flex-grow: 1;">
+              <input type="text" id="steam-search-input" placeholder="e.g. Witcher 3" aria-label="Search title in store catalog" style="flex-grow: 1;">
               <button class="btn btn-secondary" id="steam-search-btn">Search</button>
             </div>
             <div id="steam-search-results" class="search-results-list hidden"></div>
@@ -584,15 +584,15 @@
 
         <!-- Store Catalog Artwork Search -->
         <div class="settings-section">
-          <h3><i data-lucide="search" class="inline-icon" style="color: #63b3ed;"></i> Search Database Artwork</h3>
+          <h3><i data-lucide="search" class="inline-icon accent-maint-blue"></i> Search Database Artwork</h3>
           <p class="section-desc">Search Steam or IGDB to auto-fetch official cover poster & backdrop art.</p>
           <div class="form-group">
             <div class="input-with-button" style="display: flex; gap: 0.5rem;">
-              <select id="edit-search-source-select" class="styled-select" style="max-width: 100px; padding: 0.5rem; background-color: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-main); font-family: inherit; font-size: 0.85rem;">
+              <select id="edit-search-source-select" class="styled-select select-compact" aria-label="Search artwork source database">
                 <option value="steam">Steam</option>
                 <option value="igdb">IGDB</option>
               </select>
-              <input type="text" id="edit-search-input" placeholder="Search title..." style="flex-grow: 1;">
+              <input type="text" id="edit-search-input" placeholder="Search title..." aria-label="Search artwork title" style="flex-grow: 1;">
               <button class="btn btn-secondary" id="edit-search-btn" type="button">Search</button>
             </div>
             <div id="edit-search-results" class="search-results-list hidden"></div>
@@ -656,10 +656,10 @@
               </button>
               
               <div style="display: flex; gap: 0.75rem;">
-                <button type="button" class="btn btn-secondary" id="edit-game-blacklist-btn" style="flex: 1; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b; background-color: rgba(245, 158, 11, 0.08); transition: all 0.2s ease;">
+                <button type="button" class="btn btn-secondary btn-blacklist" id="edit-game-blacklist-btn">
                   <i data-lucide="slash" class="inline-icon"></i> Blacklist
                 </button>
-                <button type="button" class="btn btn-secondary" id="edit-game-delete-btn" style="flex: 1; border-color: rgba(244, 63, 94, 0.4); color: #f43f5e; background-color: rgba(244, 63, 94, 0.08); transition: all 0.2s ease;">
+                <button type="button" class="btn btn-secondary btn-delete-danger" id="edit-game-delete-btn">
                   <i data-lucide="trash-2" class="inline-icon"></i> Delete
                 </button>
               </div>

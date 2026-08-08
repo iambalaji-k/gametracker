@@ -415,7 +415,6 @@ function buildBackdropPool() {
     if (!url && g.platform === 'Steam' && g.appid) {
       url = `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/library_hero.jpg`;
     }
-    if (!url && g.cover_url) url = g.cover_url;
     if (!url) continue;
     if (seen.has(url)) continue;
     seen.add(url);
@@ -434,16 +433,19 @@ function preloadImage(url) {
   });
 }
 
+// Module-level canvas instance reused to avoid GC overhead
+const sampleCanvas = document.createElement('canvas');
+sampleCanvas.width = 16;
+sampleCanvas.height = 16;
+const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+
 // Best-effort average luminance -> opacity (brighter images sit dimmer).
 // Cross-origin images taint the canvas; we catch that and return null (default).
 function sampleBrightness(img) {
   try {
     const w = 16, h = 16;
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, w, h);
-    const data = ctx.getImageData(0, 0, w, h).data;
+    sampleCtx.drawImage(img, 0, 0, w, h);
+    const data = sampleCtx.getImageData(0, 0, w, h).data;
     let sum = 0, n = 0;
     for (let i = 0; i < data.length; i += 4) {
       const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
@@ -537,6 +539,8 @@ async function advanceBackdrop() {
     const pre = await preloadImage(only.url).catch(() => null);
     if (!pre) { scheduleNextBackdrop(); return; }
     img.src = only.url;
+    img.loading = 'eager';
+    img.setAttribute('fetchpriority', 'high');
     const op = sampleBrightness(pre) ?? ((BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2);
     layer.style.setProperty('--backdrop-opacity', op.toFixed(3));
     const m = pickMotion();
@@ -569,8 +573,12 @@ async function advanceBackdrop() {
   const incoming = backdropLayers[1 - backdropActive];
   const outgoing = backdropLayers[backdropActive];
   const img = incoming.querySelector('.backdrop-img');
+  const isFirstPaint = !document.querySelector('.backdrop-layer.is-active .backdrop-img[src]') || backdropPool.length <= 2;
 
   // Assign artwork to the hidden layer and (re)start its Ken Burns from the top.
+  img.loading = isFirstPaint ? 'eager' : 'lazy';
+  if (isFirstPaint) img.setAttribute('fetchpriority', 'high');
+  else img.removeAttribute('fetchpriority');
   img.src = item.url;
   const op = sampleBrightness(pre) ?? ((BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2);
   incoming.style.setProperty('--backdrop-opacity', op.toFixed(3));
@@ -750,7 +758,12 @@ async function saveSettingsToStorage() {
     blacklistAppIds: appState.blacklistAppIds,
     blacklistTitles: appState.blacklistTitles
   };
-  // Saved entirely to Supabase now. No local storage writes.
+  
+  try {
+    localStorage.setItem('crossplay_state', JSON.stringify(dataToSave));
+  } catch (e) {
+    console.error('Failed to write crossplay_state to localStorage:', e);
+  }
 
   // Sync to Supabase settings table if connected
   if (supabaseClient) {
@@ -865,8 +878,8 @@ function setupEventListeners() {
       searchInput.focus();
       searchInput.select();
     } 
-    // "/" key (when not already typing inside an input or textarea)
-    else if (e.key === '/' && !isInputActive) {
+    // "/" key (when not already typing inside an input or textarea and no modal is open)
+    else if (e.key === '/' && !isInputActive && !activeModal) {
       e.preventDefault();
       searchInput.focus();
       searchInput.select();
@@ -2498,10 +2511,10 @@ async function syncGogLibraryCore() {
           const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
           if (res.ok) {
             const coverData = await res.json();
-            if (coverData.backdrop_url) {
+            if (coverData.backdrop_url && !game.backdrop_url) {
               game.backdrop_url = coverData.backdrop_url;
             }
-            if (coverData.cover_url) {
+            if (coverData.cover_url && !game.cover_url) {
               game.cover_url = coverData.cover_url;
             }
           }
@@ -2588,7 +2601,7 @@ async function syncStoveLibraryCore() {
           const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
           if (res.ok) {
             const coverData = await res.json();
-            if (coverData.backdrop_url) {
+            if (coverData.backdrop_url && !game.backdrop_url) {
               game.backdrop_url = coverData.backdrop_url;
             }
             if (!game.cover_url && coverData.cover_url) {
@@ -2659,7 +2672,9 @@ async function triggerSync(platforms) {
   if (syncDropdownToggle) syncDropdownToggle.disabled = true;
   if (syncAllIcon) syncAllIcon.classList.add('syncing-rotate');
   loadingText.textContent = `Syncing ${platforms.join(' & ')} Library...`;
+  loadingSpinner.setAttribute('aria-busy', 'true');
   loadingSpinner.classList.remove('hidden');
+  gamesGrid.setAttribute('aria-busy', 'true');
   gamesGrid.classList.add('hidden');
   emptyState.classList.add('hidden');
 
@@ -2670,7 +2685,9 @@ async function triggerSync(platforms) {
 
   await Promise.allSettled(tasks);
 
+  loadingSpinner.setAttribute('aria-busy', 'false');
   loadingSpinner.classList.add('hidden');
+  gamesGrid.removeAttribute('aria-busy');
   gamesGrid.classList.remove('hidden');
   if (syncAllBtn) syncAllBtn.disabled = false;
   if (syncDropdownToggle) syncDropdownToggle.disabled = false;
@@ -2692,7 +2709,8 @@ async function syncGamesToSupabase(gamesList) {
       title: game.name,
       playtime_forever: game.playtime_forever,
       last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-      cover_url: game.cover_url
+      cover_url: game.cover_url,
+      backdrop_url: game.backdrop_url || null
     }));
 
     const { error } = await supabaseClient
@@ -2794,11 +2812,14 @@ function renderGames() {
   // Sort games
   filteredGames.sort((a, b) => {
     if (appState.sortKey === 'playtime-desc') {
-      return b.playtime_forever - a.playtime_forever;
+      const diff = b.playtime_forever - a.playtime_forever;
+      return diff !== 0 ? diff : a.name.localeCompare(b.name);
     } else if (appState.sortKey === 'playtime-asc') {
-      return a.playtime_forever - b.playtime_forever;
+      const diff = a.playtime_forever - b.playtime_forever;
+      return diff !== 0 ? diff : a.name.localeCompare(b.name);
     } else if (appState.sortKey === 'lastplayed-desc') {
-      return b.rtime_last_played - a.rtime_last_played;
+      const diff = (b.rtime_last_played || 0) - (a.rtime_last_played || 0);
+      return diff !== 0 ? diff : a.name.localeCompare(b.name);
     } else if (appState.sortKey === 'name-asc') {
       const sortA = getSortableName(a.name);
       const sortB = getSortableName(b.name);
@@ -3217,6 +3238,8 @@ function shouldExcludeGame(title, appid) {
       return true;
     }
   }
+
+  if (!title || typeof title !== 'string') return false;
 
   const titleLower = title.toLowerCase();
   

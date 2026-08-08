@@ -2,9 +2,18 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { escapeIgdbString, fetchWithTimeout, extractStoveMemberNo } from '../server.js';
 
 describe('extractStoveMemberNo', () => {
-  it('extracts member number from full profile URL', () => {
-    const url = 'https://profile.onstove.com/en/249980712/game?types=GAME&types=DLC&types=DEMO&types=UTILITY&types=COLLECTION';
-    expect(extractStoveMemberNo(url)).toBe('249980712');
+  it('extracts member number from full profile URL with various locale formats', () => {
+    const urlEn = 'https://profile.onstove.com/en/249980712/game?types=GAME&types=DLC';
+    expect(extractStoveMemberNo(urlEn)).toBe('249980712');
+
+    const urlEnUS = 'https://profile.onstove.com/en-us/249980712/game';
+    expect(extractStoveMemberNo(urlEnUS)).toBe('249980712');
+
+    const urlKr = 'https://profile.onstove.com/kr/123456789';
+    expect(extractStoveMemberNo(urlKr)).toBe('123456789');
+
+    const urlNoLang = 'https://profile.onstove.com/987654321';
+    expect(extractStoveMemberNo(urlNoLang)).toBe('987654321');
   });
 
   it('returns raw member number if numeric string is provided', () => {
