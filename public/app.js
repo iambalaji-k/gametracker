@@ -1,4 +1,6 @@
 // State Management
+const NO_COVER_PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="%231e293b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2364748b" font-family="sans-serif" font-size="36">No Cover</text></svg>';
+
 let appState = {
   games: [],
   steamId: '',
@@ -2190,6 +2192,8 @@ async function syncSteamLibraryCore() {
       existingSteamMap.set(String(g.external_id), g);
     });
 
+    const steamGames = data.response.games;
+
     const newSteamGames = steamGames
       .filter(game => !shouldExcludeGame(game.name, game.appid))
       .map(game => {
@@ -2836,7 +2840,7 @@ function showToast(message, type = 'info') {
 }
 
 // Open Edit Game Sidebar Modal (uses same slide-over settings-panel UI as Add Game)
-window.openEditGameSidebar = (platform, externalId) => {
+function openEditGameSidebar(platform, externalId) {
   const game = appState.games.find(g => g.platform === platform && String(g.external_id) === String(externalId));
   if (!game) return;
 
@@ -2908,11 +2912,13 @@ window.openEditGameSidebar = (platform, externalId) => {
 
   editModal.classList.add('open');
   lucide.createIcons();
-};
+}
+window.openEditGameSidebar = openEditGameSidebar;
 
-window.changeCoverArt = (platform, externalId) => {
-  window.openEditGameSidebar(platform, externalId);
-};
+function changeCoverArt(platform, externalId) {
+  openEditGameSidebar(platform, externalId);
+}
+window.changeCoverArt = changeCoverArt;
 
 // Check if game should be excluded by title keyword or blacklist
 function shouldExcludeGame(title, appid) {
@@ -2954,7 +2960,7 @@ function shouldExcludeGame(title, appid) {
 }
 
 // Delete game from library and add to blacklist
-window.deleteAndIgnoreGame = async (platform, externalId, name) => {
+async function deleteAndIgnoreGame(platform, externalId, name) {
   if (!confirm(`Are you sure you want to delete and ignore "${name}"? It will be removed and never imported again.`)) {
     return;
   }
@@ -3000,5 +3006,6 @@ window.deleteAndIgnoreGame = async (platform, externalId, name) => {
   // Refresh display
   renderGames();
   updateStats();
-};
+}
+window.deleteAndIgnoreGame = deleteAndIgnoreGame;
 
