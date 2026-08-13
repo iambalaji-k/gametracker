@@ -444,6 +444,17 @@
                 <button class="btn btn-secondary btn-maint-cyan" id="refresh-artwork-btn">
                   <i data-lucide="image" class="inline-icon"></i> Refresh & Repair Backdrops
                 </button>
+
+                <!-- Maintenance Progress Bar -->
+                <div id="backdrop-progress-container" class="maint-progress-wrapper" style="display: none;">
+                  <div class="maint-progress-header">
+                    <span id="backdrop-progress-text"><i data-lucide="loader-2" class="inline-icon syncing-rotate"></i> Checking backdrops...</span>
+                    <span id="backdrop-progress-percent">0%</span>
+                  </div>
+                  <div class="maint-progress-track">
+                    <div id="backdrop-progress-fill" class="maint-progress-fill" style="width: 0%;"></div>
+                  </div>
+                </div>
               </div>
 
               <!-- Data Backup & Restore -->

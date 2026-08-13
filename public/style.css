@@ -3155,3 +3155,39 @@ select.styled-select {
 .accent-maint-blue { color: #63b3ed; }
 .accent-backup { color: #38bdf8; }
 
+/* Maintenance Progress Bar */
+.maint-progress-wrapper {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-color, rgba(99, 179, 237, 0.2));
+  border-radius: 10px;
+  animation: searchResultsIn 250ms ease-out;
+}
+.maint-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-main, #e2e8f0);
+  margin-bottom: 0.6rem;
+  font-weight: 500;
+}
+.maint-progress-header .syncing-rotate {
+  margin-right: 0.35rem;
+  color: #63b3ed;
+}
+.maint-progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.maint-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #63b3ed, #818cf8);
+  border-radius: 4px;
+  transition: width 200ms ease-out;
+}

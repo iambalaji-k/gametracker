@@ -1663,11 +1663,11 @@ function extractStoveMemberNo(input) {
     }
   });
 
-  // Helper to verify if an image URL actually loads cleanly (not 404/broken)
-  // Fast image validator with memoization cache and 1500ms timeout
+  // Helper to verify if an image URL actually loads cleanly
+  // Returns { valid: boolean, is404: boolean } to distinguish explicit 404/load errors from network timeouts.
   const imageValidationCache = new Map();
-  function isImageValid(url) {
-    if (!url || typeof url !== 'string' || !url.trim()) return Promise.resolve(false);
+  function isImageValidStatus(url) {
+    if (!url || typeof url !== 'string' || !url.trim()) return Promise.resolve({ valid: false, is404: false });
     const trimmed = url.trim();
     if (imageValidationCache.has(trimmed)) {
       return Promise.resolve(imageValidationCache.get(trimmed));
@@ -1675,66 +1675,91 @@ function extractStoveMemberNo(input) {
     return new Promise((resolve) => {
       const img = new Image();
       let done = false;
+      // Increased timeout to 5000ms for slow networks
       const timer = setTimeout(() => {
         if (!done) {
           done = true;
           img.src = '';
-          imageValidationCache.set(trimmed, false);
-          resolve(false);
+          const res = { valid: false, is404: false }; // Timeout is NOT an explicit 404
+          imageValidationCache.set(trimmed, res);
+          resolve(res);
         }
-      }, 1500);
+      }, 5000);
       img.onload = () => {
         if (!done) {
           done = true;
           clearTimeout(timer);
-          imageValidationCache.set(trimmed, true);
-          resolve(true);
+          const res = { valid: true, is404: false };
+          imageValidationCache.set(trimmed, res);
+          resolve(res);
         }
       };
       img.onerror = () => {
         if (!done) {
           done = true;
           clearTimeout(timer);
-          imageValidationCache.set(trimmed, false);
-          resolve(false);
+          const res = { valid: false, is404: true }; // Explicit 404 / image load failure
+          imageValidationCache.set(trimmed, res);
+          resolve(res);
         }
       };
       img.src = trimmed;
     });
   }
 
+  // Wrapper for boolean checks
+  async function isImageValid(url) {
+    const res = await isImageValidStatus(url);
+    return res.valid;
+  }
+
   // Refresh & Repair Backdrops: populate or replace ONLY missing or invalid (broken 404) backdrops.
-  // NEVER modifies cover_url!
+  // NEVER modifies cover_url! Clears existing backdrops ONLY on explicit 404 error!
   refreshArtworkBtn.addEventListener('click', async () => {
     if (appState.games.length === 0) {
       showToast('Your library is empty. Sync a platform first!', 'info');
       return;
     }
 
+    const progressContainer = document.getElementById('backdrop-progress-container');
+    const progressText = document.getElementById('backdrop-progress-text');
+    const progressPercent = document.getElementById('backdrop-progress-percent');
+    const progressFill = document.getElementById('backdrop-progress-fill');
+
     refreshArtworkBtn.disabled = true;
     refreshArtworkBtn.innerHTML = '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Checking & repairing backdrops...';
     lucide.createIcons();
-    showToast(`Checking backdrops for ${appState.games.length} games...`, 'info');
+
+    if (progressContainer) {
+      progressContainer.style.display = 'block';
+      if (progressFill) progressFill.style.width = '0%';
+      if (progressPercent) progressPercent.textContent = '0%';
+      if (progressText) progressText.innerHTML = `<i data-lucide="loader-2" class="inline-icon syncing-rotate"></i> Checking backdrops (0 / ${appState.games.length})...`;
+      lucide.createIcons();
+    }
 
     let resolvedCount = 0;
-    const batchSize = 30; // Increased concurrency from 10 to 30 for maximum speed
+    let processedCount = 0;
+    const totalGames = appState.games.length;
+    const batchSize = 10; // Lower concurrency to prevent browser socket queueing
+
     for (let i = 0; i < appState.games.length; i += batchSize) {
       const batch = appState.games.slice(i, i + batchSize);
       await Promise.all(batch.map(async game => {
         try {
           // 1. Check if current backdrop URL is valid
           const currentUrl = game.backdrop_url ? String(game.backdrop_url).trim() : null;
-          const isCurrentValid = currentUrl ? await isImageValid(currentUrl) : false;
+          const checkStatus = currentUrl ? await isImageValidStatus(currentUrl) : { valid: false, is404: false };
 
-          if (isCurrentValid) {
+          if (checkStatus.valid) {
             // Backdrop is already valid and working! Skip.
             return;
           }
 
-          // 2. Backdrop is missing or broken -> attempt repair/fetch
+          // 2. Backdrop is missing or broken -> attempt repair/fetch candidate
           let candidateBackdrop = null;
 
-          // For Steam games, test native hero URL first if current isn't already set to it
+          // For Steam games, test native hero URL first
           if (game.platform === 'Steam' && game.appid) {
             const steamHero = `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/library_hero.jpg`;
             if (currentUrl !== steamHero && await isImageValid(steamHero)) {
@@ -1753,16 +1778,16 @@ function extractStoveMemberNo(input) {
             }
           }
 
-          // 3. Apply backdrop change if found, or clear broken URL if unfixable
+          // 3. Apply backdrop change if found, or clear ONLY if existing URL had explicit 404 error
           if (candidateBackdrop) {
             game.backdrop_url = candidateBackdrop;
             resolvedCount++;
-          } else if (currentUrl) {
-            // Current URL was broken (404) and no replacement was found; clear it so UI can fallback
+          } else if (currentUrl && checkStatus.is404) {
+            // CLEAR ONLY IF EXPLICIT 404 ERROR!
             game.backdrop_url = null;
             resolvedCount++;
           } else {
-            return; // Was missing and still couldn't find one, no DB write needed
+            return; // Timed out or missing initially without candidate -> DO NOT TOUCH game.backdrop_url!
           }
 
           // Sync backdrop change to Supabase (WITHOUT touching cover_url)
@@ -1782,6 +1807,15 @@ function extractStoveMemberNo(input) {
           }
         } catch (e) {
           console.error(`Failed to repair backdrop for ${game.name}:`, e);
+        } finally {
+          processedCount++;
+          if (progressContainer) {
+            const pct = Math.min(100, Math.round((processedCount / totalGames) * 100));
+            if (progressFill) progressFill.style.width = `${pct}%`;
+            if (progressPercent) progressPercent.textContent = `${pct}%`;
+            if (progressText) progressText.innerHTML = `<i data-lucide="loader-2" class="inline-icon syncing-rotate"></i> Checking backdrops (${processedCount} / ${totalGames})...`;
+            lucide.createIcons();
+          }
         }
       }));
     }
@@ -1790,6 +1824,13 @@ function extractStoveMemberNo(input) {
     renderGames();
     updateStageBackground();
     updateStats();
+
+    if (progressContainer) {
+      if (progressFill) progressFill.style.width = '100%';
+      if (progressPercent) progressPercent.textContent = '100%';
+      if (progressText) progressText.innerHTML = `<i data-lucide="check-circle" class="inline-icon" style="color: #10b981;"></i> Repair complete! (${resolvedCount} updated)`;
+      lucide.createIcons();
+    }
 
     refreshArtworkBtn.disabled = false;
     refreshArtworkBtn.innerHTML = '<i data-lucide="image" class="inline-icon"></i> Refresh & Repair Backdrops';
@@ -1800,6 +1841,13 @@ function extractStoveMemberNo(input) {
     } else {
       showToast('All game backdrops are already valid and working!', 'info');
     }
+
+    // Auto-hide progress bar after 5 seconds
+    setTimeout(() => {
+      if (progressContainer && !refreshArtworkBtn.disabled) {
+        progressContainer.style.display = 'none';
+      }
+    }, 5000);
   });
 
   gamesGrid.addEventListener('keydown', (e) => {
