@@ -1207,9 +1207,21 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1.125rem 1rem;
+  perspective: 1200px;
 }
 
-/* Game Card Component */
+@keyframes cardCascadeIn {
+  from {
+    opacity: 0;
+    transform: perspective(1000px) translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1000px) translateY(0px) scale(1);
+  }
+}
+
+/* Game Card Component with 3D Parallax Tilt & Cascade Entrance */
 .game-card {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-glass);
@@ -1217,17 +1229,44 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: var(--transition-smooth);
   cursor: pointer;
   position: relative;
   backdrop-filter: blur(8px);
   box-shadow: var(--shadow-card);
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+  animation: cardCascadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--card-index, 0) * 20ms);
+  transform: perspective(1000px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(0px) scale(1);
+  transition: transform 0.45s cubic-bezier(0.25, 1, 0.5, 1),
+              box-shadow 0.3s ease,
+              border-color 0.3s ease;
+}
+
+.game-card.is-tilting {
+  transition: transform 0.08s ease-out, box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
 .game-card:hover {
-  transform: translateY(-6px) scale(1.03);
-  border-color: hsla(24, 94%, 62%, 0.4);
-  box-shadow: var(--shadow-card-hover);
+  transform: perspective(1000px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(-6px) scale(1.03);
+  border-color: hsla(24, 94%, 62%, 0.45);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 0 24px hsla(24, 94%, 62%, 0.18);
+}
+
+.card-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  border-radius: inherit;
+  background: radial-gradient(circle 220px at var(--glare-x, 50%) var(--glare-y, 50%), rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.05) 45%, transparent 75%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  mix-blend-mode: overlay;
+}
+
+.game-card:hover .card-glare {
+  opacity: 1;
 }
 
 .game-cover-container {
@@ -1249,7 +1288,7 @@ body {
 }
 
 .game-card:hover .game-cover {
-  transform: scale(1.08);
+  transform: scale(1.06);
 }
 
 /* Image Fallback Overlay Styling */
@@ -1711,14 +1750,16 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   z-index: 100;
   display: flex;
   justify-content: flex-end;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              backdrop-filter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-overlay.open {
@@ -1735,14 +1776,15 @@ body {
   padding: 2.5rem 2rem;
   display: flex;
   flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transform: translate3d(100%, 0, 0) scale(0.96);
+  transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
   overflow-y: auto;
-  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+  box-shadow: -12px 0 45px rgba(0, 0, 0, 0.6);
+  will-change: transform;
 }
 
 .modal-overlay.open .settings-panel {
-  transform: translateX(0);
+  transform: translate3d(0, 0, 0) scale(1);
 }
 
 .settings-header {
@@ -2191,14 +2233,6 @@ input:checked + .slider:before {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.modal-overlay {
-  transition: opacity 300ms var(--ease-standard), backdrop-filter 300ms var(--ease-standard);
-}
-
-.settings-panel {
-  transition: transform 340ms var(--ease-out);
-}
-
 .toast {
   animation: toastIn 300ms var(--ease-out) both;
 }
@@ -2250,6 +2284,30 @@ input:checked + .slider:before {
 
 .syncing-rotate {
   animation: rotateSync 800ms linear infinite;
+}
+
+/* Sync Button Aura & Success Checkmark Pop */
+.sync-main.is-syncing {
+  border-color: hsla(24, 94%, 62%, 0.5) !important;
+  box-shadow: 0 0 16px var(--color-primary-glow), inset 0 0 8px hsla(24, 94%, 62%, 0.2);
+  animation: syncPulseAura 1.2s ease-in-out infinite alternate;
+}
+
+.sync-main.sync-success {
+  border-color: hsla(145, 80%, 45%, 0.6) !important;
+  box-shadow: 0 0 18px hsla(145, 80%, 45%, 0.35);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sync-main.sync-success i {
+  color: var(--color-success);
+  transform: scale(1.15);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes syncPulseAura {
+  0% { box-shadow: 0 0 8px var(--color-primary-glow); }
+  100% { box-shadow: 0 0 22px var(--color-primary-glow), inset 0 0 10px hsla(24, 94%, 62%, 0.25); }
 }
 
 @keyframes rotateSync {

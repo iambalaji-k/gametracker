@@ -1089,6 +1089,65 @@ function setupEventListeners() {
     });
   });
 
+  // Initialize 3D Parallax Tilt & Specular Glare on game cards
+  function initCardParallaxTilt() {
+    if (!gamesGrid) return;
+    if (window.matchMedia && !window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      return;
+    }
+
+    let activeCard = null;
+    let rafId = null;
+
+    gamesGrid.addEventListener('pointermove', (e) => {
+      const card = e.target.closest('.game-card');
+      if (!card) {
+        if (activeCard) {
+          resetCardTilt(activeCard);
+          activeCard = null;
+        }
+        return;
+      }
+
+      if (activeCard && activeCard !== card) {
+        resetCardTilt(activeCard);
+      }
+      activeCard = card;
+
+      const rect = card.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+      const tiltX = (0.5 - y) * 14;
+      const tiltY = (x - 0.5) * 14;
+
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        card.style.setProperty('--tilt-x', `${tiltX.toFixed(2)}deg`);
+        card.style.setProperty('--tilt-y', `${tiltY.toFixed(2)}deg`);
+        card.style.setProperty('--glare-x', `${(x * 100).toFixed(1)}%`);
+        card.style.setProperty('--glare-y', `${(y * 100).toFixed(1)}%`);
+        card.classList.add('is-tilting');
+      });
+    });
+
+    gamesGrid.addEventListener('pointerleave', () => {
+      if (activeCard) {
+        resetCardTilt(activeCard);
+        activeCard = null;
+      }
+    });
+
+    function resetCardTilt(card) {
+      card.classList.remove('is-tilting');
+      card.style.setProperty('--tilt-x', '0deg');
+      card.style.setProperty('--tilt-y', '0deg');
+      card.style.removeProperty('--glare-x');
+      card.style.removeProperty('--glare-y');
+    }
+  }
+  initCardParallaxTilt();
+
 // Helper to extract STOVE member number from raw ID or profile URL
 function extractStoveMemberNo(input) {
   if (!input) return '';
@@ -2859,7 +2918,10 @@ async function triggerSync(platforms) {
   }
 
   // Visual feedback on the merged button
-  if (syncAllBtn) syncAllBtn.disabled = true;
+  if (syncAllBtn) {
+    syncAllBtn.disabled = true;
+    syncAllBtn.classList.add('is-syncing');
+  }
   if (syncDropdownToggle) syncDropdownToggle.disabled = true;
   if (syncAllIcon) syncAllIcon.classList.add('syncing-rotate');
   loadingText.textContent = `Syncing ${platforms.join(' & ')} Library...`;
@@ -2880,7 +2942,14 @@ async function triggerSync(platforms) {
   loadingSpinner.classList.add('hidden');
   gamesGrid.removeAttribute('aria-busy');
   gamesGrid.classList.remove('hidden');
-  if (syncAllBtn) syncAllBtn.disabled = false;
+  if (syncAllBtn) {
+    syncAllBtn.disabled = false;
+    syncAllBtn.classList.remove('is-syncing');
+    syncAllBtn.classList.add('sync-success');
+    setTimeout(() => {
+      syncAllBtn.classList.remove('sync-success');
+    }, 1800);
+  }
   if (syncDropdownToggle) syncDropdownToggle.disabled = false;
   if (syncAllIcon) syncAllIcon.classList.remove('syncing-rotate');
 
@@ -3069,6 +3138,7 @@ function renderGames(shouldUpdateStats = true) {
     card.setAttribute('data-external-id', String(game.external_id));
     card.innerHTML = `
       <div class="game-cover-container">
+        <div class="card-glare" aria-hidden="true"></div>
         ${platformBadgeHtml}
         <button class="edit-cover-btn" type="button" title="Edit Cover Art" aria-label="Edit ${game.name}" data-platform="${game.platform}" data-external-id="${game.external_id}">
           <i data-lucide="edit-3" aria-hidden="true"></i>
