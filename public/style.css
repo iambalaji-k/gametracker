@@ -115,20 +115,27 @@
   box-shadow: 0 0 0 4px var(--color-primary-glow);
 }
 
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: var(--bg-primary);
   background-image: radial-gradient(circle at 50% 0%, var(--bg-secondary) 0%, var(--bg-primary) 45%, var(--bg-primary-edge) 100%);
   background-attachment: fixed;
   color: var(--text-main);
-  overflow: clip;
-  height: 100vh;
   position: relative;
 }
 
 /* Background Ambient Glows */
 .ambient-glow {
-  position: absolute;
+  position: fixed;
   width: 50vw;
   height: 50vw;
   border-radius: 50%;
@@ -994,6 +1001,7 @@ body {
   font-weight: 700;
   font-size: 1.9rem;
   color: var(--text-main);
+  font-variant-numeric: tabular-nums;
 }
 
 .hero-stat-label {
@@ -3225,4 +3233,177 @@ select.styled-select {
   background: linear-gradient(90deg, #38bdf8, #63b3ed, #818cf8);
   border-radius: 4px;
   transition: width 200ms ease-out;
+}
+
+/* ==========================================================================
+   CrossPlay App Preloader / Splash Screen
+   ========================================================================== */
+.app-preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background-color: #060911;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.app-preloader.is-loaded {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.preloader-ambient-glow {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, hsla(24, 94%, 62%, 0.22) 0%, hsla(190, 88%, 52%, 0.1) 45%, transparent 70%);
+  filter: blur(60px);
+  animation: preloaderPulseGlow 3s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.preloader-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+.preloader-orb-wrapper {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preloader-ring {
+  position: absolute;
+  border-radius: 50%;
+  inset: 0;
+}
+
+.preloader-ring-outer {
+  border: 2px solid transparent;
+  border-top-color: var(--color-primary);
+  border-right-color: hsla(24, 94%, 62%, 0.35);
+  animation: preloaderSpin 1.4s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+  box-shadow: 0 0 24px var(--color-primary-glow);
+}
+
+.preloader-ring-inner {
+  inset: 8px;
+  border: 2px dashed rgba(255, 255, 255, 0.25);
+  border-bottom-color: var(--color-secondary);
+  animation: preloaderSpinReverse 2.2s linear infinite;
+}
+
+.preloader-icon-box {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.35);
+  animation: preloaderFloat 2.4s ease-in-out infinite alternate;
+}
+
+.preloader-gamepad-icon {
+  width: 28px;
+  height: 28px;
+  stroke: var(--color-primary);
+  filter: drop-shadow(0 0 10px var(--color-primary-glow));
+}
+
+.preloader-brand {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 0;
+  background: linear-gradient(135deg, #ffffff 30%, hsla(24, 94%, 62%, 0.95) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 2px 20px rgba(255, 255, 255, 0.15);
+}
+
+.preloader-status-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  width: 180px;
+}
+
+.preloader-progress-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.preloader-progress-bar {
+  height: 100%;
+  width: 35%;
+  background: linear-gradient(90deg, var(--color-secondary), var(--color-primary));
+  border-radius: 999px;
+  box-shadow: 0 0 12px var(--color-primary-glow);
+  animation: preloaderProgress 1.6s ease-in-out infinite;
+}
+
+.preloader-status-text {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+@keyframes preloaderSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes preloaderSpinReverse {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(-360deg); }
+}
+
+@keyframes preloaderPulseGlow {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  100% { transform: scale(1.15); opacity: 1; }
+}
+
+@keyframes preloaderFloat {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-4px); }
+}
+
+@keyframes preloaderProgress {
+  0% { transform: translateX(-100%); width: 25%; }
+  50% { width: 65%; }
+  100% { transform: translateX(250%); width: 35%; }
 }

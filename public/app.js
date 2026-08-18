@@ -635,8 +635,43 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+let isAppPreloaderActive = true;
+
+// Helper to smoothly dismiss the app preloader / splash screen
+function hideAppPreloader(statusMsg = 'READY') {
+  const preloader = document.getElementById('app-preloader');
+  if (!preloader || preloader.classList.contains('is-loaded')) return;
+
+  const statusText = document.getElementById('preloader-status-text');
+  if (statusText) statusText.textContent = statusMsg;
+
+  setTimeout(() => {
+    isAppPreloaderActive = false;
+    preloader.classList.add('is-loaded');
+    
+    // Trigger the hero stats count-up animation precisely as the loading screen fades out!
+    if (typeof updateStats === 'function') {
+      requestAnimationFrame(() => {
+        updateStats();
+      });
+    }
+
+    setTimeout(() => {
+      preloader.remove();
+    }, 700);
+  }, 250);
+}
+window.hideAppPreloader = hideAppPreloader;
+
 // Initialize Application
 document.addEventListener('DOMContentLoaded', async () => {
+  const initStartTime = performance.now();
+
+  // Safety fallback timeout: ensure preloader dismisses even if network hangs
+  const safetyTimeout = setTimeout(() => {
+    hideAppPreloader('READY');
+  }, 3500);
+
   // Load configuration and data from localStorage
   loadSettingsFromStorage();
   
@@ -654,6 +689,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Sticky top navbar that auto-hides on scroll-down, shows on scroll-up
   initStickyNav();
+
+  const statusText = document.getElementById('preloader-status-text');
+  if (statusText && appState.supabaseConfig.enabled) {
+    statusText.textContent = 'CONNECTING CLOUD...';
+  }
   
   // Try connecting to Supabase if configured
   await initializeSupabase();
@@ -663,15 +703,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // If Supabase is connected, fetch settings and games from there
   if (appState.supabaseConfig.enabled && supabaseClient) {
+    if (statusText) statusText.textContent = 'SYNCING VAULT...';
     await fetchSettingsFromSupabase();
     await fetchGamesFromSupabase();
   }
 
-  // Initial render
+  // Initial render (render cards without triggering count-up before preloader dismisses)
   if (appState.games && appState.games.length > 0) {
     emptyState.classList.add('hidden');
-    renderGames();
-    updateStats();
+    renderGames(false);
   } else {
     emptyState.classList.remove('hidden');
   }
@@ -680,12 +720,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     requestAnimationFrame(() => {
       window.updateFilterPillGlider(null, true);
     });
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(() => {
-        window.updateFilterPillGlider(null, true);
-      });
-    }
   }
+
+  // Wait for web fonts to be completely ready
+  if (document.fonts && document.fonts.ready) {
+    try {
+      await document.fonts.ready;
+    } catch (_) {}
+  }
+
+  if (typeof window.updateFilterPillGlider === 'function') {
+    window.updateFilterPillGlider(null, true);
+  }
+
+  // Ensure minimum preloader display time (650ms) so the opening animation plays gracefully
+  const elapsed = performance.now() - initStartTime;
+  const remainingDelay = Math.max(0, 650 - elapsed);
+
+  setTimeout(() => {
+    clearTimeout(safetyTimeout);
+    hideAppPreloader('READY');
+  }, remainingDelay);
 });
 
 // Load settings from local storage
@@ -2469,7 +2524,6 @@ async function fetchGamesFromSupabase() {
       emptyState.classList.add('hidden');
       renderGames();
       updateStats();
-      showToast(`Imported ${data.length} games from Supabase cloud database`, 'success');
     } else {
       // Database has no games. If we have games in appState (loaded from localStorage), migrate them to Supabase!
       if (appState.games && appState.games.length > 0) {
@@ -2910,8 +2964,10 @@ function getPlatformBadgeHtml(platform) {
 }
 
 // Render Games Grid
-function renderGames() {
-  updateStats();
+function renderGames(shouldUpdateStats = true) {
+  if (shouldUpdateStats) {
+    updateStats();
+  }
   gamesGrid.innerHTML = '';
   
   if (appState.games.length === 0) {
@@ -3107,24 +3163,77 @@ function getTabFilteredGames() {
   });
 }
 
-// Update Stats Dashboard Summary (based strictly on active store/platform filter tab)
-function updateStats() {
-  const tabGames = getTabFilteredGames();
+// Smooth Count-Up / Counter animation helper
+const activeCounters = new WeakMap();
 
-  if (tabGames.length === 0) {
-    statTotalGames.textContent = '0';
-    statTotalHours.textContent = '0 hrs';
+function animateCounter(element, targetValue, { duration = 750, suffix = '', formatter = (n) => Math.round(n).toLocaleString() } = {}) {
+  if (!element) return;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    element.textContent = `${formatter(targetValue)}${suffix}`;
+    activeCounters.set(element, { currentValue: targetValue, rafId: null });
     return;
   }
 
-  const totalGames = tabGames.length;
+  const prev = activeCounters.get(element);
+  if (prev && prev.rafId) {
+    cancelAnimationFrame(prev.rafId);
+  }
 
-  // Hours
+  let startValue = 0;
+  if (prev && typeof prev.currentValue === 'number' && !isNaN(prev.currentValue)) {
+    startValue = prev.currentValue;
+  } else {
+    const parsed = parseFloat(element.textContent.replace(/[^0-9.]/g, ''));
+    startValue = isNaN(parsed) ? 0 : parsed;
+  }
+
+  if (startValue === targetValue) {
+    element.textContent = `${formatter(targetValue)}${suffix}`;
+    activeCounters.set(element, { currentValue: targetValue, rafId: null });
+    return;
+  }
+
+  const startTime = performance.now();
+
+  function easeOutExpo(t) {
+    return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  }
+
+  function frame(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const ease = easeOutExpo(progress);
+    const currentValue = startValue + (targetValue - startValue) * ease;
+
+    element.textContent = `${formatter(currentValue)}${suffix}`;
+
+    if (progress < 1) {
+      const rafId = requestAnimationFrame(frame);
+      activeCounters.set(element, { currentValue, rafId });
+    } else {
+      element.textContent = `${formatter(targetValue)}${suffix}`;
+      activeCounters.set(element, { currentValue: targetValue, rafId: null });
+    }
+  }
+
+  const rafId = requestAnimationFrame(frame);
+  activeCounters.set(element, { currentValue: startValue, rafId });
+}
+
+// Update Stats Dashboard Summary (based strictly on active store/platform filter tab)
+function updateStats() {
+  if (isAppPreloaderActive) {
+    return;
+  }
+  const tabGames = getTabFilteredGames();
+
+  const totalGames = tabGames.length;
   const totalMinutes = tabGames.reduce((sum, g) => sum + g.playtime_forever, 0);
   const totalHours = Math.round(totalMinutes / 60);
 
-  statTotalGames.textContent = totalGames.toLocaleString();
-  statTotalHours.textContent = `${totalHours.toLocaleString()} hrs`;
+  animateCounter(statTotalGames, totalGames, { duration: 900 });
+  animateCounter(statTotalHours, totalHours, { duration: 900, suffix: ' hrs' });
 }
 
 // Sticky navbar auto-hide: hides when scrolling down, reveals when scrolling up

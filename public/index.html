@@ -13,9 +13,36 @@
   <script defer src="https://unpkg.com/lucide@latest"></script>
   <!-- Supabase JS Client CDN -->
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="style.css?v=3.2">
+  <link rel="stylesheet" href="style.css?v=3.7">
 </head>
 <body>
+  <!-- App Preloader / Exciting Loading Screen -->
+  <div id="app-preloader" class="app-preloader" aria-label="Loading CrossPlay" role="status" aria-live="polite">
+    <div class="preloader-ambient-glow"></div>
+    <div class="preloader-content">
+      <div class="preloader-orb-wrapper">
+        <div class="preloader-ring preloader-ring-outer"></div>
+        <div class="preloader-ring preloader-ring-inner"></div>
+        <div class="preloader-icon-box">
+          <svg class="preloader-gamepad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" x2="10" y1="12" y2="12"></line>
+            <line x1="8" x2="8" y1="10" y2="14"></line>
+            <line x1="15" x2="15.01" y1="13" y2="13"></line>
+            <line x1="18" x2="18.01" y1="11" y2="11"></line>
+            <rect width="20" height="12" x="2" y="6" rx="6"></rect>
+          </svg>
+        </div>
+      </div>
+      <h2 class="preloader-brand">CrossPlay</h2>
+      <div class="preloader-status-wrapper">
+        <div class="preloader-progress-track">
+          <div class="preloader-progress-bar" id="preloader-progress-bar"></div>
+        </div>
+        <span class="preloader-status-text" id="preloader-status-text">INITIALIZING VAULT...</span>
+      </div>
+    </div>
+  </div>
+
   <a href="#library-view" class="skip-link">Skip to content</a>
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -682,6 +709,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js?v=2.7"></script>
 </body>
 </html>
