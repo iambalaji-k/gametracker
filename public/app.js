@@ -675,6 +675,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     emptyState.classList.remove('hidden');
   }
+
+  if (typeof window.updateFilterPillGlider === 'function') {
+    requestAnimationFrame(() => {
+      window.updateFilterPillGlider(null, true);
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        window.updateFilterPillGlider(null, true);
+      });
+    }
+  }
 });
 
 // Load settings from local storage
@@ -901,6 +912,52 @@ function setupEventListeners() {
     renderGames();
   });
 
+  function updateFilterPillGlider(activeBtn, immediate = false) {
+    const container = document.querySelector('.filter-tabs');
+    const glider = document.getElementById('filter-pill-glider');
+    if (!container || !glider) return;
+
+    const btn = activeBtn || container.querySelector('.tab-btn.active') || container.querySelector('.tab-btn');
+    if (!btn || btn.offsetParent === null) {
+      glider.classList.remove('ready');
+      return;
+    }
+
+    const left = btn.offsetLeft;
+    const top = btn.offsetTop;
+    const width = btn.offsetWidth;
+    const height = btn.offsetHeight;
+
+    if (width === 0 && height === 0) return;
+
+    if (immediate) {
+      glider.classList.add('no-animate');
+    } else {
+      glider.classList.remove('no-animate');
+    }
+
+    glider.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+    glider.style.width = `${width}px`;
+    glider.style.height = `${height}px`;
+    glider.classList.add('ready');
+
+    if (immediate) {
+      void glider.offsetWidth;
+      requestAnimationFrame(() => {
+        glider.classList.remove('no-animate');
+      });
+    }
+
+    if (container.scrollWidth > container.clientWidth) {
+      const scrollLeft = btn.offsetLeft - (container.clientWidth / 2) + (btn.offsetWidth / 2);
+      container.scrollTo({
+        left: Math.max(0, scrollLeft),
+        behavior: immediate ? 'auto' : 'smooth'
+      });
+    }
+  }
+  window.updateFilterPillGlider = updateFilterPillGlider;
+
   function syncFilterPressedState() {
     filterBtns.forEach(b => {
       const isActive = b.classList.contains('active');
@@ -908,6 +965,8 @@ function setupEventListeners() {
     });
   }
   syncFilterPressedState();
+  updateFilterPillGlider(null, true);
+
   filterBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
       const target = e.currentTarget;
@@ -915,6 +974,7 @@ function setupEventListeners() {
       target.classList.add('active');
       appState.filters = target.dataset.filter;
       syncFilterPressedState();
+      updateFilterPillGlider(target, false);
       renderGames();
     });
     btn.addEventListener('keydown', (e) => {
@@ -923,10 +983,25 @@ function setupEventListeners() {
         const dir = e.key === 'ArrowRight' ? 1 : -1;
         const idx = Array.from(filterBtns).indexOf(e.currentTarget);
         const next = filterBtns[(idx + dir + filterBtns.length) % filterBtns.length];
-        if (next) next.focus();
+        if (next) {
+          next.focus();
+          next.click();
+        }
       }
     });
   });
+
+  const filterContainer = document.querySelector('.filter-tabs');
+  if (filterContainer && window.ResizeObserver) {
+    const filterResizeObserver = new ResizeObserver(() => {
+      updateFilterPillGlider(null, true);
+    });
+    filterResizeObserver.observe(filterContainer);
+  } else {
+    window.addEventListener('resize', () => {
+      updateFilterPillGlider(null, true);
+    });
+  }
 
   // Top navbar links
   document.querySelectorAll('.navbar-link').forEach(link => {
@@ -3080,6 +3155,11 @@ function showPage(pageName) {
     settingsView.classList.add('hidden');
     navLibrary.classList.add('active');
     navSettingsBtn.classList.remove('active');
+    if (typeof window.updateFilterPillGlider === 'function') {
+      requestAnimationFrame(() => {
+        window.updateFilterPillGlider(null, true);
+      });
+    }
   } else if (pageName === 'settings') {
     libraryView.classList.add('hidden');
     settingsView.classList.remove('hidden');
