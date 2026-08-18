@@ -1063,14 +1063,18 @@ body {
   outline-offset: -2px;
 }
 
-#add-game-btn {
-  background-color: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.22);
+#add-game-btn,
+.sync-main,
+.sync-caret {
+  background-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.32);
 }
 
-#add-game-btn:hover {
-  background-color: rgba(255, 255, 255, 0.24);
-  border-color: rgba(255, 255, 255, 0.32);
+#add-game-btn:hover,
+.sync-main:hover,
+.sync-caret:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.42);
 }
 
 /* Merged Sync button + side dropdown */
@@ -1090,7 +1094,7 @@ body {
   margin-left: -1px;
   padding-left: 0.7rem;
   padding-right: 0.7rem;
-  border-left: 1px solid rgba(255, 255, 255, 0.25);
+  border-left: 1px solid rgba(255, 255, 255, 0.32);
 }
 
 .sync-menu {
