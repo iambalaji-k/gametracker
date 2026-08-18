@@ -931,21 +931,20 @@ function setupEventListeners() {
     if (width === 0 && height === 0) return;
 
     if (immediate) {
-      glider.classList.add('no-animate');
-    } else {
-      glider.classList.remove('no-animate');
-    }
-
-    glider.style.transform = `translate3d(${left}px, ${top}px, 0)`;
-    glider.style.width = `${width}px`;
-    glider.style.height = `${height}px`;
-    glider.classList.add('ready');
-
-    if (immediate) {
+      glider.style.transition = 'none';
+      glider.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      glider.style.width = `${width}px`;
+      glider.style.height = `${height}px`;
+      glider.classList.add('ready');
       void glider.offsetWidth;
-      requestAnimationFrame(() => {
-        glider.classList.remove('no-animate');
-      });
+      glider.style.transition = '';
+    } else {
+      glider.style.transition = '';
+      glider.classList.add('ready');
+      void glider.offsetWidth;
+      glider.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      glider.style.width = `${width}px`;
+      glider.style.height = `${height}px`;
     }
 
     if (container.scrollWidth > container.clientWidth) {
@@ -970,12 +969,18 @@ function setupEventListeners() {
   filterBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
       const target = e.currentTarget;
+      if (target.classList.contains('active') && appState.filters === target.dataset.filter) {
+        return;
+      }
       filterBtns.forEach(b => b.classList.remove('active'));
       target.classList.add('active');
       appState.filters = target.dataset.filter;
       syncFilterPressedState();
       updateFilterPillGlider(target, false);
-      renderGames();
+      
+      requestAnimationFrame(() => {
+        renderGames();
+      });
     });
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
@@ -993,8 +998,17 @@ function setupEventListeners() {
 
   const filterContainer = document.querySelector('.filter-tabs');
   if (filterContainer && window.ResizeObserver) {
-    const filterResizeObserver = new ResizeObserver(() => {
-      updateFilterPillGlider(null, true);
+    let prevWidth = 0;
+    let prevHeight = 0;
+    const filterResizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (prevWidth === 0 || Math.abs(width - prevWidth) > 5 || Math.abs(height - prevHeight) > 5) {
+          prevWidth = width;
+          prevHeight = height;
+          updateFilterPillGlider(null, true);
+        }
+      }
     });
     filterResizeObserver.observe(filterContainer);
   } else {
