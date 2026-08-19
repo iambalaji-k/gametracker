@@ -2721,6 +2721,7 @@ input:checked + .slider:before {
   #steam-identifier,
   #gog-username,
   #stove-member-no,
+  #itch-collection-url,
   #steam-search-input,
   #edit-search-input,
   #edit-game-title,
@@ -3224,6 +3225,10 @@ select.styled-select {
 .accent-stove { color: var(--platform-stove); }
 .avatar-stove { background-color: rgba(255, 107, 0, 0.1); border-color: rgba(255, 107, 0, 0.3); color: var(--platform-stove); }
 .avatar-stove-sm { background-color: rgba(255, 107, 0, 0.1); border-color: rgba(255, 107, 0, 0.3); color: var(--platform-stove); }
+.accent-itch { color: var(--platform-itch); }
+.avatar-itch { background-color: rgba(250, 92, 92, 0.1); border-color: rgba(250, 92, 92, 0.3); color: var(--platform-itch); }
+.avatar-itch-sm { background-color: rgba(250, 92, 92, 0.1); border-color: rgba(250, 92, 92, 0.3); color: var(--platform-itch); }
+.link-itch { color: var(--platform-itch); text-decoration: underline; }
 .accent-cyan { color: var(--color-secondary); }
 .btn-epic { width: 100%; background-color: hsla(190, 88%, 52%, 0.08); border-color: rgba(0, 242, 254, 0.25); color: var(--color-secondary); }
 .avatar-epic { background-color: hsla(190, 88%, 52%, 0.1); border-color: rgba(0, 242, 254, 0.3); color: var(--color-secondary); }

@@ -123,6 +123,9 @@
               <button class="sync-menu-item" data-sync="Stove" role="menuitem">
                 <i data-lucide="gamepad-2"></i><span>Sync Stove</span>
               </button>
+              <button class="sync-menu-item" data-sync="Itch" role="menuitem">
+                <i data-lucide="gamepad-2"></i><span>Sync Itch.io</span>
+              </button>
             </div>
           </div>
         </div>
@@ -322,6 +325,34 @@
                   <div class="profile-info">
                     <h4 id="resolved-stove-name">STOVE Account</h4>
                     <p id="resolved-stove-id" class="help-text">Member ID: 249980712</p>
+                  </div>
+                  <div class="profile-status-badge badge-ready">Ready</div>
+                </div>
+              </div>
+
+              <!-- Itch.io Collection Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="gamepad" class="inline-icon accent-itch"></i> Itch.io Collection Integration</h3>
+                <p class="section-desc">Enter your public Itch.io Collection URL to sync your Itch.io library (e.g. https://itch.io/c/7892665/balaji-ks-collection).</p>
+                
+                <div class="form-group">
+                  <label for="itch-collection-url">Itch.io Collection URL</label>
+                  <div class="input-with-button">
+                    <input type="text" id="itch-collection-url" placeholder="e.g. https://itch.io/c/7892665/balaji-ks-collection">
+                    <button class="btn btn-secondary" id="save-itch-btn">Apply</button>
+                  </div>
+                  <p class="help-text">
+                    <i data-lucide="info" class="tiny-icon"></i> You can paste your public Itch.io collection URL or collection ID.
+                  </p>
+                </div>
+                
+                <div class="profile-resolved-card hidden" id="resolved-itch-card">
+                  <div class="profile-avatar-placeholder avatar-itch">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-itch-name">Itch.io Collection</h4>
+                    <p id="resolved-itch-id" class="help-text">Collection: Connected</p>
                   </div>
                   <div class="profile-status-badge badge-ready">Ready</div>
                 </div>

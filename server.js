@@ -49,6 +49,28 @@ function extractStoveMemberNo(input) {
   return trimmed;
 }
 
+// Extract and normalize Itch.io collection URL
+function extractItchCollectionUrl(input) {
+  if (!input) return '';
+  const trimmed = String(input).trim();
+  const match = trimmed.match(/(?:https?:\/\/)?(?:[a-zA-Z0-9_-]+\.)?itch\.io\/c\/(\d+)(?:\/([a-zA-Z0-9_-]+))?/i);
+  if (match) {
+    const colId = match[1];
+    const slug = match[2] ? `/${match[2]}` : '';
+    return `https://itch.io/c/${colId}${slug}`;
+  }
+  const simpleMatch = trimmed.match(/^c?\/??(\d+)(?:\/([a-zA-Z0-9_-]+))?$/i);
+  if (simpleMatch) {
+    const colId = simpleMatch[1];
+    const slug = simpleMatch[2] ? `/${simpleMatch[2]}` : '';
+    return `https://itch.io/c/${colId}${slug}`;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.split('?')[0].replace(/\/$/, '');
+  }
+  return trimmed;
+}
+
 // Self-contained SVG placeholder (the old via.placeholder.com service is defunct)
 const NO_COVER_PLACEHOLDER = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90">' +
@@ -57,7 +79,7 @@ const NO_COVER_PLACEHOLDER = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComp
   '</svg>'
 );
 
-export { app, fetchWithTimeout, escapeIgdbString, extractStoveMemberNo };
+export { app, fetchWithTimeout, escapeIgdbString, extractStoveMemberNo, extractItchCollectionUrl };
 
 // Resolve paths for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -303,6 +325,145 @@ app.get('/api/stove/games', async (req, res) => {
   } catch (error) {
     console.error('Error fetching STOVE games:', error);
     return res.status(500).json({ error: 'Failed to fetch STOVE games' });
+  }
+});
+
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function parseItchCollectionHtml(html) {
+  const games = [];
+  const cellSplits = html.split(/<div[^>]*\bdata-game_id=/i);
+
+  for (let i = 1; i < cellSplits.length; i++) {
+    const chunk = cellSplits[i];
+    const idMatch = chunk.match(/^["']?(\d+)["']?/);
+    const gameId = idMatch ? idMatch[1] : '';
+
+    const titleMatch = chunk.match(/class=["'][^"']*game_title[^"']*["'][^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i) ||
+                       chunk.match(/<a[^>]*class=["'][^"']*(?:title|game_link)[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+    let title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').trim() : '';
+    title = decodeHtmlEntities(title);
+
+    const imgMatch = chunk.match(/data-lazy_src=["']([^"']+)["']/i) ||
+                     chunk.match(/src=["'](https:\/\/img\.itch\.zone\/[^"']+)["']/i);
+    let coverUrl = imgMatch ? imgMatch[1] : '';
+
+    const urlMatch = chunk.match(/class=["'][^"']*thumb_link[^"']*["'][^>]*href=["'](https?:\/\/[^"']+)["']/i) ||
+                     chunk.match(/href=["'](https:\/\/[a-zA-Z0-9_-]+\.itch\.io\/[a-zA-Z0-9_-]+)["']/i);
+    const gameUrl = urlMatch ? urlMatch[1] : '';
+
+    const authorMatch = chunk.match(/class=["'][^"']*game_author[^"']*["'][^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i);
+    const author = authorMatch ? decodeHtmlEntities(authorMatch[1].replace(/<[^>]*>/g, '').trim()) : '';
+
+    if (title && gameId) {
+      games.push({
+        appid: gameId,
+        name: title,
+        author: author,
+        cover_url: coverUrl || null,
+        url: gameUrl,
+        playtime_forever: 0,
+        rtime_last_played: 0,
+        platform: 'Itch.io'
+      });
+    }
+  }
+
+  return games;
+}
+
+// Endpoint to fetch Itch.io collection games
+app.get('/api/itch/games', async (req, res) => {
+  const { collectionUrl: rawUrl } = req.query;
+  if (!rawUrl) {
+    return res.status(400).json({ error: 'collectionUrl query parameter is required' });
+  }
+
+  const collectionUrl = extractItchCollectionUrl(rawUrl);
+  if (!collectionUrl || !collectionUrl.includes('itch.io/c/')) {
+    return res.status(400).json({ error: 'Invalid Itch.io collection URL. Expected format: https://itch.io/c/12345/collection-name' });
+  }
+
+  try {
+    const allGames = [];
+    const cleanUrl = collectionUrl.replace(/\?.*$/, '').replace(/\/$/, '');
+    const MAX_PAGES = 50;
+
+    // Fetch initial page
+    const initialRes = await fetchWithTimeout(cleanUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    }, 12000);
+
+    if (initialRes.status === 404 || initialRes.status === 403) {
+      return res.status(404).json({ error: 'Itch.io collection was not found or is private.' });
+    }
+
+    if (!initialRes.ok) {
+      throw new Error(`Itch.io returned status ${initialRes.status}`);
+    }
+
+    const initialHtml = await initialRes.text();
+    const initialGames = parseItchCollectionHtml(initialHtml);
+    for (const g of initialGames) {
+      if (!allGames.some(existing => existing.appid === g.appid)) {
+        allGames.push(g);
+      }
+    }
+
+    // Extract collection title if present
+    const titleMatch = initialHtml.match(/<div class="grid_header">\s*<h2>([^<]+)<\/h2>/i) ||
+                       initialHtml.match(/<title>([^<]+)<\/title>/i);
+    let collectionName = titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : 'Itch.io Collection';
+
+    // Handle pagination if collection has more pages
+    let page = 2;
+    while (page <= MAX_PAGES && initialHtml.includes('class="next_page"')) {
+      const pageUrl = `${cleanUrl}?page=${page}`;
+      const pageRes = await fetchWithTimeout(pageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+      }, 10000);
+
+      if (!pageRes.ok) break;
+
+      const pageHtml = await pageRes.text();
+      const pageGames = parseItchCollectionHtml(pageHtml);
+      let newInPage = 0;
+      for (const g of pageGames) {
+        if (!allGames.some(existing => existing.appid === g.appid)) {
+          allGames.push(g);
+          newInPage++;
+        }
+      }
+
+      if (newInPage === 0 || !pageHtml.includes('class="next_page"')) {
+        break;
+      }
+      page++;
+    }
+
+    return res.json({
+      collectionUrl,
+      collectionName,
+      games: allGames
+    });
+  } catch (error) {
+    console.error('Error fetching Itch.io collection:', error);
+    return res.status(500).json({ error: 'Failed to fetch Itch.io collection' });
   }
 });
 

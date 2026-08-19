@@ -7,6 +7,7 @@ let appState = {
   vanityUrl: '',
   gogUsername: '',
   stoveMemberNo: '',
+  itchCollectionUrl: '',
   epicConnected: false,
   legacyConnected: false,
   filters: 'all',
@@ -324,6 +325,13 @@ const saveStoveBtn = document.getElementById('save-stove-btn');
 const resolvedStoveCard = document.getElementById('resolved-stove-card');
 const resolvedStoveName = document.getElementById('resolved-stove-name');
 const resolvedStoveId = document.getElementById('resolved-stove-id');
+
+// Itch inputs
+const itchCollectionUrlInput = document.getElementById('itch-collection-url');
+const saveItchBtn = document.getElementById('save-itch-btn');
+const resolvedItchCard = document.getElementById('resolved-itch-card');
+const resolvedItchName = document.getElementById('resolved-itch-name');
+const resolvedItchId = document.getElementById('resolved-itch-id');
 
 // Epic inputs
 const copyEpicScriptBtn = document.getElementById('copy-epic-script-btn');
@@ -793,6 +801,15 @@ function loadSettingsFromStorage() {
         if (resolvedStoveId) resolvedStoveId.textContent = `Member ID: ${appState.stoveMemberNo}`;
       }
 
+      if (itchCollectionUrlInput) {
+        itchCollectionUrlInput.value = appState.itchCollectionUrl || '';
+      }
+      if (appState.itchCollectionUrl && resolvedItchCard) {
+        resolvedItchCard.classList.remove('hidden');
+        if (resolvedItchName) resolvedItchName.textContent = 'Itch.io Collection';
+        if (resolvedItchId) resolvedItchId.textContent = 'Collection: Connected';
+      }
+
       if (appState.epicConnected) {
         resolvedEpicCard.classList.remove('hidden');
       }
@@ -801,8 +818,6 @@ function loadSettingsFromStorage() {
         resolvedLegacyCard.classList.remove('hidden');
       }
 
-
-      
       // Supabase is loaded automatically from backend now.
     } catch (e) {
       console.error('Error parsing saved settings state:', e);
@@ -818,6 +833,7 @@ async function saveSettingsToStorage() {
     vanityUrl: appState.vanityUrl,
     gogUsername: appState.gogUsername,
     stoveMemberNo: appState.stoveMemberNo,
+    itchCollectionUrl: appState.itchCollectionUrl,
     epicConnected: appState.epicConnected,
     legacyConnected: appState.legacyConnected,
     supabaseConfig: appState.supabaseConfig,
@@ -842,6 +858,7 @@ async function saveSettingsToStorage() {
           vanity_url: appState.vanityUrl,
           gog_username: appState.gogUsername,
           stove_member_no: appState.stoveMemberNo,
+          itch_collection_url: appState.itchCollectionUrl,
           epic_connected: appState.epicConnected,
           legacy_connected: appState.legacyConnected,
           blacklist_app_ids: appState.blacklistAppIds,
@@ -849,11 +866,174 @@ async function saveSettingsToStorage() {
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Failed to sync settings to Supabase:', error);
+        if (error.message && (error.message.includes('itch_collection_url') || error.code === 'PGRST204')) {
+          showToast('Please run the migration SQL in Supabase SQL editor to add the itch_collection_url column.', 'warning');
+        }
+      }
     } catch (err) {
       console.error('Failed to sync settings to Supabase:', err);
     }
   }
+}
+
+// Helper to extract STOVE member number from raw ID or profile URL
+function extractStoveMemberNo(input) {
+  if (!input) return '';
+  const trimmed = String(input).trim();
+  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2}\/)?(\d+)/i);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+  const digitsMatch = trimmed.match(/^\d+$/);
+  if (digitsMatch) {
+    return trimmed;
+  }
+  const anyDigits = trimmed.match(/(\d{6,})/);
+  if (anyDigits) {
+    return anyDigits[1];
+  }
+  return trimmed;
+}
+
+// Helper to extract Itch.io collection URL from raw input
+function extractItchCollectionUrl(input) {
+  if (!input) return '';
+  const trimmed = String(input).trim();
+  const match = trimmed.match(/(?:https?:\/\/)?(?:[a-zA-Z0-9_-]+\.)?itch\.io\/c\/(\d+)(?:\/([a-zA-Z0-9_-]+))?/i);
+  if (match) {
+    const colId = match[1];
+    const slug = match[2] ? `/${match[2]}` : '';
+    return `https://itch.io/c/${colId}${slug}`;
+  }
+  const simpleMatch = trimmed.match(/^c?\/??(\d+)(?:\/([a-zA-Z0-9_-]+))?$/i);
+  if (simpleMatch) {
+    const colId = simpleMatch[1];
+    const slug = simpleMatch[2] ? `/${simpleMatch[2]}` : '';
+    return `https://itch.io/c/${colId}${slug}`;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.split('?')[0].replace(/\/$/, '');
+  }
+  return trimmed;
+}
+
+// Normalize game title for robust duplicate matching
+function normalizeGameTitle(title) {
+  if (!title) return '';
+  return String(title)
+    .toLowerCase()
+    .replace(/&amp;/g, '&')
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&/g, 'and')
+    .replace(/\b(part|episode|case|chapter|vol|volume)\s+(one|i)\b/g, '$1 1')
+    .replace(/\b(part|episode|case|chapter|vol|volume)\s+(two|ii)\b/g, '$1 2')
+    .replace(/\b(part|episode|case|chapter|vol|volume)\s+(three|iii)\b/g, '$1 3')
+    .replace(/\b(part|episode|case|chapter|vol|volume)\s+(four|iv)\b/g, '$1 4')
+    .replace(/\b(part|episode|case|chapter|vol|volume)\s+(five|v)\b/g, '$1 5')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Helper to stem plural words for title matching (e.g. Lords of Chaos -> Lord of Chaos)
+function stemTitle(title) {
+  if (!title) return '';
+  return normalizeGameTitle(title)
+    .split(' ')
+    .map(w => (w.length > 3 && w.endsWith('s')) ? w.slice(0, -1) : w)
+    .join(' ');
+}
+
+// Deduplicate a list of games by platform and normalized title
+function deduplicateGamesList(gamesList, autoCleanSupabase = false) {
+  if (!Array.isArray(gamesList)) return [];
+
+  const uniqueMap = new Map();
+  const duplicateExternalIdsByPlatform = new Map();
+
+  for (const game of gamesList) {
+    if (!game) continue;
+    const platform = (game.platform || 'Other').trim();
+    const rawTitle = game.name || game.title || '';
+    const stem = stemTitle(rawTitle);
+    
+    // Key by normalized platform and stemmed title
+    const key = `${platform.toLowerCase()}:::${stem}`;
+
+    if (!stem) {
+      const idKey = `${platform.toLowerCase()}:::id:::${game.external_id || Math.random()}`;
+      uniqueMap.set(idKey, game);
+      continue;
+    }
+
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, { ...game });
+    } else {
+      const existing = uniqueMap.get(key);
+
+      const existingIsManual = String(existing.external_id || '').startsWith('manual_');
+      const currentIsManual = String(game.external_id || '').startsWith('manual_');
+
+      let winner = existing;
+      let loser = game;
+
+      // Prefer non-manual (official store ID) over manual_...
+      if (existingIsManual && !currentIsManual) {
+        winner = { ...game };
+        loser = existing;
+      }
+
+      // Merge cover and backdrop if winner is missing them
+      if (!winner.cover_url && loser.cover_url) winner.cover_url = loser.cover_url;
+      if (!winner.backdrop_url && loser.backdrop_url) winner.backdrop_url = loser.backdrop_url;
+
+      // Merge playtime (keep largest)
+      const winnerPlaytime = winner.playtime_forever || 0;
+      const loserPlaytime = loser.playtime_forever || 0;
+      winner.playtime_forever = Math.max(winnerPlaytime, loserPlaytime);
+
+      // Merge last played (keep most recent)
+      const winnerLastPlayed = winner.rtime_last_played || 0;
+      const loserLastPlayed = loser.rtime_last_played || 0;
+      winner.rtime_last_played = Math.max(winnerLastPlayed, loserLastPlayed);
+
+      uniqueMap.set(key, winner);
+
+      // Record loser external_id for database cleanup
+      if (loser.external_id && String(loser.external_id) !== String(winner.external_id)) {
+        const platKey = loser.platform || platform;
+        if (!duplicateExternalIdsByPlatform.has(platKey)) {
+          duplicateExternalIdsByPlatform.set(platKey, new Set());
+        }
+        duplicateExternalIdsByPlatform.get(platKey).add(String(loser.external_id));
+      }
+    }
+  }
+
+  // If requested and supabase is connected, delete duplicate rows in the background
+  if (autoCleanSupabase && supabaseClient && duplicateExternalIdsByPlatform.size > 0) {
+    for (const [plat, idSet] of duplicateExternalIdsByPlatform.entries()) {
+      const ids = Array.from(idSet);
+      if (ids.length > 0) {
+        console.log(`[CrossPlay] Cleaning up ${ids.length} duplicate entries for ${plat} in Supabase:`, ids);
+        supabaseClient
+          .from('games')
+          .delete()
+          .ilike('platform', plat)
+          .in('external_id', ids)
+          .then(({ error }) => {
+            if (error) console.warn('[CrossPlay] Failed to remove duplicate rows from Supabase:', error);
+            else console.log(`[CrossPlay] Cleaned up duplicate rows for ${plat} from Supabase.`);
+          })
+          .catch(console.error);
+      }
+    }
+  }
+
+  return Array.from(uniqueMap.values());
 }
 
 // Setup Event Listeners
@@ -1148,25 +1328,6 @@ function setupEventListeners() {
   }
   initCardParallaxTilt();
 
-// Helper to extract STOVE member number from raw ID or profile URL
-function extractStoveMemberNo(input) {
-  if (!input) return '';
-  const trimmed = String(input).trim();
-  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2}\/)?(\d+)/i);
-  if (urlMatch) {
-    return urlMatch[1];
-  }
-  const digitsMatch = trimmed.match(/^\d+$/);
-  if (digitsMatch) {
-    return trimmed;
-  }
-  const anyDigits = trimmed.match(/(\d{6,})/);
-  if (anyDigits) {
-    return anyDigits[1];
-  }
-  return trimmed;
-}
-
   // Steam config save
   saveSteamBtn.addEventListener('click', async () => {
     const inputVal = steamIdentifierInput.value.trim();
@@ -1254,6 +1415,33 @@ function extractStoveMemberNo(input) {
       resolvedStoveId.textContent = `Member ID: ${memberNo}`;
 
       showToast('STOVE integration configuration saved!', 'success');
+    });
+  }
+
+  // Itch.io config save
+  if (saveItchBtn) {
+    saveItchBtn.addEventListener('click', () => {
+      const rawInput = itchCollectionUrlInput.value.trim();
+      if (!rawInput) {
+        showToast('Please enter an Itch.io Collection URL', 'error');
+        return;
+      }
+      
+      const colUrl = extractItchCollectionUrl(rawInput);
+      if (!colUrl || !colUrl.includes('itch.io/c/')) {
+        showToast('Invalid Itch.io Collection URL. Expected: https://itch.io/c/12345/collection-name', 'error');
+        return;
+      }
+
+      appState.itchCollectionUrl = colUrl;
+      itchCollectionUrlInput.value = colUrl;
+      saveSettingsToStorage();
+
+      resolvedItchCard.classList.remove('hidden');
+      resolvedItchName.textContent = 'Itch.io Collection';
+      resolvedItchId.textContent = 'Collection: Connected';
+
+      showToast('Itch.io collection configuration saved!', 'success');
     });
   }
 
@@ -1473,10 +1661,11 @@ function extractStoveMemberNo(input) {
     if (appState.steamId) configuredPlatforms.push('Steam');
     if (appState.gogUsername) configuredPlatforms.push('GOG');
     if (appState.stoveMemberNo) configuredPlatforms.push('Stove');
+    if (appState.itchCollectionUrl) configuredPlatforms.push('Itch');
     
     if (configuredPlatforms.length === 0) {
-      // Default to trying all 3 and prompting for missing settings if none configured
-      triggerSync(['Steam', 'GOG', 'Stove']);
+      // Default to trying all platforms and prompting for missing settings if none configured
+      triggerSync(['Steam', 'GOG', 'Stove', 'Itch']);
     } else {
       triggerSync(configuredPlatforms);
     }
@@ -2429,6 +2618,7 @@ async function fetchSettingsFromSupabase() {
       appState.vanityUrl = data.vanity_url || '';
       appState.gogUsername = data.gog_username || '';
       appState.stoveMemberNo = data.stove_member_no || '';
+      appState.itchCollectionUrl = data.itch_collection_url || '';
       appState.epicConnected = data.epic_connected || false;
       appState.legacyConnected = data.legacy_connected || false;
       appState.blacklistAppIds = data.blacklist_app_ids || [];
@@ -2456,6 +2646,17 @@ async function fetchSettingsFromSupabase() {
         resolvedStoveCard.classList.remove('hidden');
         if (resolvedStoveName) resolvedStoveName.textContent = 'STOVE Account';
         if (resolvedStoveId) resolvedStoveId.textContent = `Member ID: ${appState.stoveMemberNo}`;
+      }
+
+      if (itchCollectionUrlInput) {
+        itchCollectionUrlInput.value = appState.itchCollectionUrl || '';
+      }
+      if (appState.itchCollectionUrl && resolvedItchCard) {
+        resolvedItchCard.classList.remove('hidden');
+        if (resolvedItchName) resolvedItchName.textContent = 'Itch.io Collection';
+        if (resolvedItchId) resolvedItchId.textContent = 'Collection: Connected';
+      } else if (resolvedItchCard) {
+        resolvedItchCard.classList.add('hidden');
       }
       
       if (appState.epicConnected) {
@@ -2568,7 +2769,7 @@ async function fetchGamesFromSupabase() {
     if (error) throw error;
     
     if (data && data.length > 0) {
-      appState.games = data.map(item => ({
+      const parsedGames = data.map(item => ({
         external_id: item.external_id,
         platform: item.platform,
         appid: item.platform === 'Steam' ? Number(item.external_id) : item.external_id,
@@ -2578,6 +2779,9 @@ async function fetchGamesFromSupabase() {
         cover_url: item.cover_url,
         backdrop_url: item.backdrop_url || null
       }));
+      
+      // Deduplicate loaded games and clean up any old redundant duplicate rows in Supabase
+      appState.games = deduplicateGamesList(parsedGames, true);
       
       saveSettingsToStorage();
       emptyState.classList.add('hidden');
@@ -2890,14 +3094,168 @@ async function syncStoveLibraryCore() {
   }
 }
 
+// Sync Itch.io Library (Public collection scraper sync)
+async function syncItchLibraryCore() {
+  try {
+    const response = await fetch(`/api/itch/games?collectionUrl=${encodeURIComponent(appState.itchCollectionUrl)}`);
+    if (!response.ok) {
+      let errMsg = `Server returned error status: ${response.status}`;
+      try {
+        const errJson = await response.json();
+        if (errJson && errJson.error) errMsg = errJson.error;
+      } catch (e) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    if (!data.games) {
+      throw new Error('No games returned. Collection might be empty or private.');
+    }
+
+    const collectionGames = data.games;
+
+    // Filter existing Itch.io games in library (checking platform case-insensitively)
+    const existingItchGames = appState.games.filter(g => {
+      const p = (g.platform || '').toLowerCase();
+      return p === 'itch.io' || p === 'itch';
+    });
+
+    // Build lookup maps for existing Itch.io games
+    const existingItchIdMap = new Map();
+    const existingItchTitleMap = new Map();
+
+    existingItchGames.forEach(g => {
+      if (g.external_id) existingItchIdMap.set(String(g.external_id).toLowerCase(), g);
+      if (g.appid) existingItchIdMap.set(String(g.appid).toLowerCase(), g);
+      const stem = stemTitle(g.name || g.title);
+      if (stem) existingItchTitleMap.set(stem, g);
+    });
+
+    const matchedExistingExtIds = new Set();
+
+    const newItchGames = collectionGames
+      .filter(game => !shouldExcludeGame(game.name, game.appid))
+      .map(game => {
+        let cover = game.cover_url || '';
+        if (cover.startsWith('//')) {
+          cover = 'https:' + cover;
+        }
+        const extId = String(game.appid);
+        const stem = stemTitle(game.name);
+
+        // Find existing match by ID or Stemmed Title (e.g. Lord of Chaos <-> Lords of Chaos)
+        const existing = existingItchIdMap.get(extId.toLowerCase()) || existingItchTitleMap.get(stem);
+
+        if (existing) {
+          if (existing.external_id) matchedExistingExtIds.add(String(existing.external_id));
+        }
+
+        return {
+          external_id: extId,
+          platform: 'Itch.io',
+          appid: game.appid,
+          name: game.name,
+          // PRESERVE user's existing playtime and last played dates
+          playtime_forever: (existing && existing.playtime_forever !== undefined && existing.playtime_forever !== null) ? existing.playtime_forever : 0,
+          rtime_last_played: (existing && existing.rtime_last_played !== undefined && existing.rtime_last_played !== null) ? existing.rtime_last_played : 0,
+          // PRESERVE user's existing cover and backdrop artwork if they already exist
+          cover_url: (existing && existing.cover_url) ? existing.cover_url : (cover || null),
+          backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
+        };
+      });
+
+    // Preserve any existing manual Itch.io games that were not matched to this collection
+    const preservedManualGames = existingItchGames.filter(g => {
+      const extStr = String(g.external_id || '');
+      const isMatched = matchedExistingExtIds.has(extStr);
+      return !isMatched && (extStr.startsWith('manual_') || !collectionGames.some(cg => normalizeGameTitle(cg.name) === normalizeGameTitle(g.name)));
+    });
+
+    // Resolve landscape backdrop / vertical poster via search-cover if missing
+    const itchBatchSize = 10;
+    for (let i = 0; i < newItchGames.length; i += itchBatchSize) {
+      const batch = newItchGames.slice(i, i + itchBatchSize);
+      await Promise.all(batch.map(async game => {
+        if (!game.backdrop_url || !game.cover_url) {
+          try {
+            const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+            if (res.ok) {
+              const coverData = await res.json();
+              if (coverData.backdrop_url && !game.backdrop_url) {
+                game.backdrop_url = coverData.backdrop_url;
+              }
+              if (!game.cover_url && coverData.cover_url) {
+                game.cover_url = coverData.cover_url;
+              }
+            }
+          } catch (e) {
+            console.error(`Failed to resolve artwork for ${game.name}:`, e);
+          }
+        }
+      }));
+    }
+
+    const cleanItchList = deduplicateGamesList(newItchGames, false);
+
+    // Delete any old manual_... rows from Supabase so they don't linger in DB
+    if (supabaseClient) {
+      const oldManualIds = existingItchGames
+        .filter(g => String(g.external_id || '').startsWith('manual_'))
+        .map(g => String(g.external_id));
+
+      if (oldManualIds.length > 0) {
+        console.log('[CrossPlay Itch Sync] Deleting obsolete manual entries from Supabase:', oldManualIds);
+        try {
+          await supabaseClient
+            .from('games')
+            .delete()
+            .ilike('platform', 'Itch.io')
+            .in('external_id', oldManualIds);
+        } catch (err) {
+          console.warn('Failed to delete obsolete manual rows from Supabase:', err);
+        }
+      }
+    }
+
+    // Merge: Replace Itch games with the exact synced collection (preserving all other platforms)
+    appState.games = deduplicateGamesList([
+      ...appState.games.filter(g => {
+        const p = (g.platform || '').toLowerCase();
+        return p !== 'itch.io' && p !== 'itch';
+      }),
+      ...cleanItchList
+    ], true);
+
+    saveSettingsToStorage();
+
+    if (appState.supabaseConfig.enabled && supabaseClient) {
+      showToast('Syncing Itch.io library with Supabase...', 'info');
+      await syncGamesToSupabase(appState.games);
+    }
+
+    renderGames();
+    updateStats();
+    if (cleanItchList.length === 0) {
+      showToast('Itch.io sync complete: 0 games found. (Verify collection URL and public status)', 'info');
+    } else {
+      showToast(`Successfully synced ${cleanItchList.length} Itch.io games!`, 'success');
+    }
+
+  } catch (err) {
+    console.error(err);
+    showToast(`Itch.io Sync failed: ${err.message}`, 'error');
+  }
+}
+
 // Orchestrate a sync of one or all configured platforms from the merged button / dropdown
 async function triggerSync(platforms) {
-  // Normalize platform names to correct casing ('Steam', 'GOG', 'Stove')
+  // Normalize platform names to correct casing ('Steam', 'GOG', 'Stove', 'Itch')
   platforms = platforms.map(p => {
     const lower = p.toLowerCase();
     if (lower === 'steam') return 'Steam';
     if (lower === 'gog') return 'GOG';
     if (lower === 'stove') return 'Stove';
+    if (lower === 'itch' || lower === 'itch.io') return 'Itch';
     return p;
   });
 
@@ -2913,6 +3271,11 @@ async function triggerSync(platforms) {
   }
   if (platforms.includes('Stove') && !appState.stoveMemberNo) {
     showToast('Please configure your STOVE Member ID in Settings first!', 'info');
+    showPage('settings');
+    return;
+  }
+  if (platforms.includes('Itch') && !appState.itchCollectionUrl) {
+    showToast('Please configure your Itch.io Collection URL in Settings first!', 'info');
     showPage('settings');
     return;
   }
@@ -2935,6 +3298,7 @@ async function triggerSync(platforms) {
   if (platforms.includes('Steam') && appState.steamId) tasks.push(syncSteamLibraryCore());
   if (platforms.includes('GOG') && appState.gogUsername) tasks.push(syncGogLibraryCore());
   if (platforms.includes('Stove') && appState.stoveMemberNo) tasks.push(syncStoveLibraryCore());
+  if (platforms.includes('Itch') && appState.itchCollectionUrl) tasks.push(syncItchLibraryCore());
 
   await Promise.allSettled(tasks);
 
@@ -2963,13 +3327,14 @@ async function syncGamesToSupabase(gamesList) {
   if (!supabaseClient) return;
 
   try {
-    const rows = gamesList.map(game => ({
+    const deduplicated = deduplicateGamesList(gamesList, false);
+    const rows = deduplicated.map(game => ({
       external_id: String(game.external_id),
       platform: game.platform,
       title: game.name,
-      playtime_forever: game.playtime_forever,
+      playtime_forever: game.playtime_forever || 0,
       last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-      cover_url: game.cover_url,
+      cover_url: game.cover_url || null,
       backdrop_url: game.backdrop_url || null
     }));
 
@@ -3034,6 +3399,8 @@ function getPlatformBadgeHtml(platform) {
 
 // Render Games Grid
 function renderGames(shouldUpdateStats = true) {
+  appState.games = deduplicateGamesList(appState.games, false);
+
   if (shouldUpdateStats) {
     updateStats();
   }

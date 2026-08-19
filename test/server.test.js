@@ -1,5 +1,29 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { escapeIgdbString, fetchWithTimeout, extractStoveMemberNo } from '../server.js';
+import { escapeIgdbString, fetchWithTimeout, extractStoveMemberNo, extractItchCollectionUrl } from '../server.js';
+
+describe('extractItchCollectionUrl', () => {
+  it('extracts collection URL from full itch.io collection links', () => {
+    const url = 'https://itch.io/c/7892665/balaji-ks-collection';
+    expect(extractItchCollectionUrl(url)).toBe('https://itch.io/c/7892665/balaji-ks-collection');
+
+    const urlWithParams = 'https://itch.io/c/7892665/balaji-ks-collection?page=2&sort=date';
+    expect(extractItchCollectionUrl(urlWithParams)).toBe('https://itch.io/c/7892665/balaji-ks-collection');
+
+    const urlWithoutSlug = 'https://itch.io/c/7892665';
+    expect(extractItchCollectionUrl(urlWithoutSlug)).toBe('https://itch.io/c/7892665');
+  });
+
+  it('normalizes partial collection identifiers', () => {
+    expect(extractItchCollectionUrl('c/7892665/balaji-ks-collection')).toBe('https://itch.io/c/7892665/balaji-ks-collection');
+    expect(extractItchCollectionUrl('7892665/balaji-ks-collection')).toBe('https://itch.io/c/7892665/balaji-ks-collection');
+    expect(extractItchCollectionUrl('7892665')).toBe('https://itch.io/c/7892665');
+  });
+
+  it('handles empty or null inputs gracefully', () => {
+    expect(extractItchCollectionUrl('')).toBe('');
+    expect(extractItchCollectionUrl(null)).toBe('');
+  });
+});
 
 describe('extractStoveMemberNo', () => {
   it('extracts member number from full profile URL with various locale formats', () => {

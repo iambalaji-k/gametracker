@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
   epic_connected BOOLEAN DEFAULT false,
   legacy_connected BOOLEAN DEFAULT false,
   stove_member_no TEXT,
+  itch_collection_url TEXT,
   blacklist_app_ids JSONB DEFAULT '[]'::jsonb,
   blacklist_titles JSONB DEFAULT '[]'::jsonb,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -33,3 +34,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
 -- This allows direct read/write access from the frontend via the Anon Key.
 ALTER TABLE public.games DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings DISABLE ROW LEVEL SECURITY;
+
+-- Migration alters (safe to run on existing databases to add missing columns)
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS stove_member_no TEXT;
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS itch_collection_url TEXT;
