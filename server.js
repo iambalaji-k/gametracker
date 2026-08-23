@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -79,42 +79,93 @@ const NO_COVER_PLACEHOLDER = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComp
   '</svg>'
 );
 
-export { app, fetchWithTimeout, escapeIgdbString, extractStoveMemberNo, extractItchCollectionUrl };
+export { app, fetchWithTimeout, escapeIgdbString, extractStoveMemberNo, extractItchCollectionUrl, decodeHtmlEntities, normalizeGameName };
 
 // Resolve paths for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Security headers + CORS + JSON parsing
-// Note: a tailored CSP is required because the UI loads Lucide icons and the
-// Supabase client from CDNs, Google Fonts stylesheets, external cover images,
-// and connects directly to Supabase from the browser.
+// Security headers + rate limiting + JSON parsing
+// Note: a tailored CSP is required because the UI loads Lucide icons from a CDN,
+// Google Fonts stylesheets, and external cover images. The browser no longer
+// talks to Supabase directly — all DB access is proxied through /api/db/*.
 app.use(
   helmet({
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
-        scriptSrc: ["'self'", "https://unpkg.com", "https://cdn.jsdelivr.net"],
+        scriptSrc: ["'self'", "https://unpkg.com"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         styleSrcElem: ["'self'", "https://fonts.googleapis.com", "'unsafe-inline'"],
         fontSrc: ["'self'", "https:", "data:"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "https://unpkg.com"],
+        connectSrc: ["'self'", "https://unpkg.com"],
       },
     },
   })
 );
-app.use(cors());
+// CORS removed (audit B4): the frontend is served same-origin by this Express app,
+// so cross-origin API access was pure liability.
+
+// Rate limiting (audit B3): protects upstream quotas and stops this server being
+// used as a free proxy. Global baseline + stricter budget for /api/* proxies.
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' }
+});
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'API rate limit exceeded (30 requests/minute). Try again shortly.' }
+});
+app.use(globalLimiter);
+app.use('/api/', apiLimiter);
+
 app.use(express.json({ limit: '1mb' }));
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Retrieve Steam API Key from env
-const STEAM_API_KEY = process.env.steam_web_api_key || process.env.STEAM_API_KEY;
+// Retrieve Steam API Key from env (uppercase preferred; legacy lowercase kept as fallback)
+const STEAM_API_KEY = process.env.STEAM_API_KEY || process.env.steam_web_api_key;
 
 if (!STEAM_API_KEY) {
-  console.warn('WARNING: steam_web_api_key is not defined in your .env file!');
+  console.warn('WARNING: STEAM_API_KEY is not defined in your .env file!');
+}
+
+// ---------------------------------------------------------------------------
+// Server-side Supabase access (audit B1-A): credentials never leave the server.
+// Uses the service key when available; falls back to the anon key. Once RLS is
+// enabled in schema.sql only the service key can touch the tables.
+// ---------------------------------------------------------------------------
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+
+function supabaseConfigured() {
+  return !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
+}
+
+function supabaseHeaders(extra = {}) {
+  return {
+    apikey: SUPABASE_SERVICE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+    'Content-Type': 'application/json',
+    ...extra
+  };
+}
+
+function validateDbRow(row) {
+  if (!row || typeof row !== 'object') return 'row must be an object';
+  if (typeof row.platform !== 'string' || !row.platform.trim() || row.platform.length > 32) return 'platform must be a non-empty string (max 32 chars)';
+  if ((typeof row.external_id !== 'string' && typeof row.external_id !== 'number')) return 'external_id must be a string or number';
+  if (String(row.external_id).length > 64) return 'external_id too long';
+  if (typeof row.title !== 'string' || !row.title.trim() || row.title.length > 256) return 'title must be a non-empty string (max 256 chars)';
+  return null;
 }
 
 // Endpoint to resolve Steam custom/vanity URL to a 17-digit SteamID
@@ -122,6 +173,11 @@ app.get('/api/steam/resolve', async (req, res) => {
   const { vanityUrl } = req.query;
   if (!vanityUrl) {
     return res.status(400).json({ error: 'vanityUrl query parameter is required' });
+  }
+
+  // Audit B5: cap length and restrict charset before embedding in the upstream URL.
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(vanityUrl))) {
+    return res.status(400).json({ error: 'vanityUrl must be 1-64 characters (letters, digits, dashes, underscores).' });
   }
 
   if (!STEAM_API_KEY) {
@@ -152,6 +208,12 @@ app.get('/api/steam/games', async (req, res) => {
     return res.status(400).json({ error: 'steamId query parameter is required' });
   }
 
+  // Audit B5: SteamIDs are always 17 digits — reject anything else before it
+  // reaches the upstream URL.
+  if (!/^\d{17}$/.test(String(steamId))) {
+    return res.status(400).json({ error: 'steamId must be a 17-digit SteamID (e.g. 76561198000000000).' });
+  }
+
   if (!STEAM_API_KEY) {
     return res.status(500).json({ error: 'Steam API key is missing on backend server' });
   }
@@ -178,6 +240,11 @@ app.get('/api/gog/games', async (req, res) => {
   const { username } = req.query;
   if (!username) {
     return res.status(400).json({ error: 'username query parameter is required' });
+  }
+
+  // Audit B5: GOG usernames have a safe charset — validate before building the profile URL.
+  if (!/^[A-Za-z0-9_.-]{2,40}$/.test(String(username))) {
+    return res.status(400).json({ error: 'username must be 2-40 characters (letters, digits, dots, dashes, underscores).' });
   }
 
   try {
@@ -227,7 +294,14 @@ app.get('/api/gog/games', async (req, res) => {
       page++;
     } while (page <= totalPages && page <= MAX_PAGES);
 
-    return res.json({ games: allGames });
+    // Audit B8: surface truncation instead of silently dropping games
+    let truncated = false;
+    if (totalPages > MAX_PAGES) {
+      truncated = true;
+      console.warn(`[GOG] Library for "${username}" has ${totalPages} pages; only the first ${MAX_PAGES} were fetched.`);
+    }
+
+    return res.json({ games: allGames, truncated, totalAvailablePages: totalPages });
   } catch (error) {
     console.error('Error fetching GOG games:', error);
     return res.status(500).json({ error: 'Failed to fetch GOG games' });
@@ -242,8 +316,8 @@ app.get('/api/stove/games', async (req, res) => {
   }
 
   const memberNo = extractStoveMemberNo(rawMemberNo);
-  if (!memberNo) {
-    return res.status(400).json({ error: 'Invalid STOVE Member No or Profile URL' });
+  if (!memberNo || !/^\d+$/.test(memberNo)) {
+    return res.status(400).json({ error: 'Invalid STOVE Member ID or Profile URL. Expected a numeric Member No or an onstove.com profile URL.' });
   }
 
   try {
@@ -321,7 +395,14 @@ app.get('/api/stove/games', async (req, res) => {
       page++;
     } while (page <= totalPages && page <= MAX_PAGES);
 
-    return res.json({ memberNo, games: allGames });
+    // Audit B8: surface truncation instead of silently dropping games
+    let truncated = false;
+    if (totalPages > MAX_PAGES) {
+      truncated = true;
+      console.warn(`[STOVE] Library for member ${memberNo} has ${totalPages} pages; only the first ${MAX_PAGES} were fetched.`);
+    }
+
+    return res.json({ memberNo, games: allGames, truncated, totalAvailablePages: totalPages });
   } catch (error) {
     console.error('Error fetching STOVE games:', error);
     return res.status(500).json({ error: 'Failed to fetch STOVE games' });
@@ -330,13 +411,18 @@ app.get('/api/stove/games', async (req, res) => {
 
 function decodeHtmlEntities(str) {
   if (!str) return '';
+  const safeCodePoint = (n) => (Number.isFinite(n) && n > 0 && n <= 0x10ffff) ? String.fromCodePoint(n) : '';
+  // Numeric forms first, named entities next, &amp; LAST so it never masks others.
+  // Audit B9: numeric forms (&#39;, &#x27;, etc.) previously leaked as literal garbage.
   return str
-    .replace(/&amp;/g, '&')
-    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => safeCodePoint(Number(d)))
     .replace(/&quot;/g, '"')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ');
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
 }
 
 function parseItchCollectionHtml(html) {
@@ -492,8 +578,16 @@ async function getTwitchAccessToken() {
 
   console.log('Fetching new Twitch Access Token...');
   twitchTokenPromise = (async () => {
-    const response = await fetchWithTimeout(`https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`, {
-      method: 'POST'
+    // Audit B10: send credentials in the POST body, not the query string
+    // (secrets in URLs leak into proxy/access logs).
+    const response = await fetchWithTimeout('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      })
     });
 
     if (!response.ok) {
@@ -513,6 +607,39 @@ async function getTwitchAccessToken() {
   } finally {
     twitchTokenPromise = null;
   }
+}
+
+// Drop the cached Twitch token (audit B10: called when IGDB returns 401 so the
+// next attempt fetches a fresh token instead of failing until restart).
+function invalidateTwitchToken() {
+  twitchAccessToken = null;
+  twitchTokenExpiry = 0;
+}
+
+// Run an IGDB query with automatic token refresh + one retry on 401.
+async function igdbQuery(query) {
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  const token = await getTwitchAccessToken();
+
+  const call = async (authToken) => fetchWithTimeout('https://api.igdb.com/v4/games', {
+    method: 'POST',
+    headers: {
+      'Client-ID': clientId,
+      'Authorization': `Bearer ${authToken}`,
+      'Accept': 'application/json',
+      'Content-Type': 'text/plain'
+    },
+    body: query
+  });
+
+  let response = await call(token);
+  if (response.status === 401) {
+    // Cached token revoked/expired server-side — force refresh and retry once.
+    invalidateTwitchToken();
+    const fresh = await getTwitchAccessToken();
+    response = await call(fresh);
+  }
+  return response;
 }
 
 function generateSearchTerms(rawName) {
@@ -538,6 +665,39 @@ function generateSearchTerms(rawName) {
   return terms;
 }
 
+// Normalize a game name for exact-match comparison across sources (audit B7)
+function normalizeGameName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
+// In-memory cache for /api/games/search-cover responses (audit B3).
+// Key: normalized game name. TTL 5 minutes, bounded at 200 entries.
+const coverSearchCache = new Map(); // key -> { expires, payload }
+const COVER_CACHE_TTL_MS = 5 * 60 * 1000;
+const COVER_CACHE_MAX_ENTRIES = 200;
+
+function getCachedCoverSearch(key) {
+  const entry = coverSearchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) {
+    coverSearchCache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function setCachedCoverSearch(key, payload) {
+  if (!coverSearchCache.has(key) && coverSearchCache.size >= COVER_CACHE_MAX_ENTRIES) {
+    const oldest = coverSearchCache.keys().next().value;
+    if (oldest !== undefined) coverSearchCache.delete(oldest);
+  }
+  coverSearchCache.set(key, { expires: Date.now() + COVER_CACHE_TTL_MS, payload });
+}
+
 // Endpoint to search Steam store catalog for a game title and resolve its AppID & vertical cover art (with IGDB fallback)
 app.get('/api/games/search-cover', async (req, res) => {
   const { name } = req.query;
@@ -545,10 +705,24 @@ app.get('/api/games/search-cover', async (req, res) => {
     return res.status(400).json({ error: 'name query parameter is required' });
   }
 
+  // Audit B3: small in-memory cache — sync/maintenance flows repeatedly look up
+  // the same game names, so this saves a lot of upstream quota.
+  const cacheKey = String(name).toLowerCase().trim();
+  const cached = getCachedCoverSearch(cacheKey);
+  if (cached) {
+    return res.json(cached);
+  }
+
   const searchTerms = generateSearchTerms(name);
 
+  // Audit B7: normalize names so "exact match" comparisons are robust across sources.
+  const normName = normalizeGameName(name);
+
   try {
-    let steamCandidate = null;
+    let bestSteam = null; // best Steam candidate seen across all term variations
+
+    // Score a Steam candidate: exact name match beats hero art, hero beats nothing.
+    const scoreSteamCandidate = (c) => (c.exact ? 2 : 0) + (c.hasHero ? 1 : 0);
 
     // 1. Try Steam store search across term variations
     for (const term of searchTerms) {
@@ -562,15 +736,16 @@ app.get('/api/games/search-cover', async (req, res) => {
       if (response.ok) {
         const data = await response.json();
         if (data && data.items && data.items.length > 0) {
-          const normName = name.toLowerCase().trim();
-          const candidates = [...data.items].sort((a, b) => {
-            const aExact = (a.name || '').toLowerCase().trim() === normName ? 0 : 1;
-            const bExact = (b.name || '').toLowerCase().trim() === normName ? 0 : 1;
-            return aExact - bExact;
-          });
-
           // Check top 3 candidates concurrently to prevent sequential timeout delays
-          const topCandidates = candidates.slice(0, 3);
+          const topCandidates = data.items
+            .slice()
+            .sort((a, b) => {
+              const aExact = normalizeGameName(a.name || '') === normName ? 0 : 1;
+              const bExact = normalizeGameName(b.name || '') === normName ? 0 : 1;
+              return aExact - bExact;
+            })
+            .slice(0, 3);
+
           const candidateResults = await Promise.all(
             topCandidates.map(async (item) => {
               const itemName = item.name || name;
@@ -586,6 +761,7 @@ app.get('/api/games/search-cover', async (req, res) => {
                     cover_url: coverUrl,
                     backdrop_url: backdropUrl,
                     source: 'Steam',
+                    exact: normalizeGameName(itemName) === normName,
                     hasHero: true
                   };
                 }
@@ -599,48 +775,37 @@ app.get('/api/games/search-cover', async (req, res) => {
                 cover_url: coverUrl,
                 backdrop_url: null,
                 source: 'Steam',
+                exact: normalizeGameName(itemName) === normName,
                 hasHero: false
               };
             })
           );
 
-          const heroMatch = candidateResults.find(c => c.hasHero);
-          if (heroMatch) {
-            return res.json({
-              appid: heroMatch.appid,
-              title: heroMatch.title,
-              cover_url: heroMatch.cover_url,
-              backdrop_url: heroMatch.backdrop_url,
-              source: heroMatch.source
-            });
-          }
-
-          if (!steamCandidate && candidateResults.length > 0) {
-            steamCandidate = candidateResults[0];
+          for (const candidate of candidateResults) {
+            // Perfect score (exact name + hero art) can't be beaten — return early.
+            if (candidate.exact && candidate.hasHero) {
+              const winner = { appid: candidate.appid, title: candidate.title, cover_url: candidate.cover_url, backdrop_url: candidate.backdrop_url, source: candidate.source };
+              setCachedCoverSearch(cacheKey, winner);
+              return res.json(winner);
+            }
+            if (!bestSteam || scoreSteamCandidate(candidate) > scoreSteamCandidate(bestSteam)) {
+              bestSteam = candidate;
+            }
           }
         }
       }
     }
 
-    // 2. Fall back to IGDB if keys are configured and Steam hero was missing or Steam had no match
+    // 2. Fall back to IGDB if keys are configured
+    let igdbResult = null; // { appid, title, cover_url, backdrop_url, source, exact }
     const clientId = process.env.TWITCH_CLIENT_ID;
     const clientSecret = process.env.TWITCH_CLIENT_SECRET;
     if (clientId && clientSecret) {
       try {
-        const token = await getTwitchAccessToken();
         for (const term of searchTerms) {
           const query = `search "${escapeIgdbString(term)}"; fields name, cover.url, screenshots.url, artworks.url; limit 1;`;
 
-          const igdbRes = await fetchWithTimeout('https://api.igdb.com/v4/games', {
-            method: 'POST',
-            headers: {
-              'Client-ID': clientId,
-              'Authorization': `Bearer ${token}`,
-              'Accept': 'application/json',
-              'Content-Type': 'text/plain'
-            },
-            body: query
-          });
+          const igdbRes = await igdbQuery(query);
 
           if (igdbRes.ok) {
             const games = await igdbRes.json();
@@ -665,13 +830,15 @@ app.get('/api/games/search-cover', async (req, res) => {
                 backdropUrl = sUrl.replace('t_thumb', 't_1080p');
               }
 
-              return res.json({
-                appid: steamCandidate ? steamCandidate.appid : ('igdb_' + game.id),
-                title: steamCandidate ? steamCandidate.title : game.name,
-                cover_url: (steamCandidate && steamCandidate.cover_url) ? steamCandidate.cover_url : coverUrl,
-                backdrop_url: backdropUrl, // Landscape hero from IGDB (or null if IGDB also has none)
-                source: backdropUrl ? 'IGDB' : (steamCandidate ? 'Steam' : 'IGDB')
-              });
+              igdbResult = {
+                appid: 'igdb_' + game.id,
+                title: game.name,
+                cover_url: coverUrl,
+                backdrop_url: backdropUrl,
+                source: 'IGDB',
+                exact: normalizeGameName(game.name || '') === normName
+              };
+              break; // first term with a result wins (terms are ordered best-first)
             }
           }
         }
@@ -680,12 +847,48 @@ app.get('/api/games/search-cover', async (req, res) => {
       }
     }
 
-    // 3. Return Steam candidate with null backdrop_url if IGDB fallback failed or has no landscape hero
-    if (steamCandidate) {
-      return res.json(steamCandidate);
+    // 3. Pick ONE coherent winner — identity fields and artwork always come from
+    // the same source (audit B7: never glue Steam identity onto IGDB artwork).
+    let winner = null;
+
+    if (!bestSteam) {
+      winner = igdbResult;
+    } else if (!igdbResult) {
+      winner = {
+        appid: bestSteam.appid,
+        title: bestSteam.title,
+        cover_url: bestSteam.cover_url,
+        backdrop_url: bestSteam.backdrop_url,
+        source: bestSteam.source
+      };
+    } else {
+      const steamExact = bestSteam.exact;
+      const steamHasHero = bestSteam.hasHero;
+
+      if (steamExact && steamHasHero) {
+        // Steam exact + hero is the ideal result
+        winner = { appid: bestSteam.appid, title: bestSteam.title, cover_url: bestSteam.cover_url, backdrop_url: bestSteam.backdrop_url, source: bestSteam.source };
+      } else if (igdbResult.exact && !steamExact) {
+        // IGDB matched the name exactly and Steam didn't — trust IGDB entirely
+        winner = { appid: igdbResult.appid, title: igdbResult.title, cover_url: igdbResult.cover_url, backdrop_url: igdbResult.backdrop_url, source: igdbResult.source };
+      } else if (steamHasHero) {
+        // Neither source is an exact match, or both are — prefer Steam's real hero art
+        winner = { appid: bestSteam.appid, title: bestSteam.title, cover_url: bestSteam.cover_url, backdrop_url: bestSteam.backdrop_url, source: bestSteam.source };
+      } else if (igdbResult.backdrop_url) {
+        // Steam had no hero, IGDB has landscape art — take IGDB wholesale
+        winner = { appid: igdbResult.appid, title: igdbResult.title, cover_url: igdbResult.cover_url, backdrop_url: igdbResult.backdrop_url, source: igdbResult.source };
+      } else {
+        // Nothing better available — Steam candidate with null backdrop
+        winner = { appid: bestSteam.appid, title: bestSteam.title, cover_url: bestSteam.cover_url, backdrop_url: null, source: bestSteam.source };
+      }
     }
 
-    return res.json({ appid: null, cover_url: null, backdrop_url: null });
+    const payload = winner
+      ? { appid: winner.appid, title: winner.title, cover_url: winner.cover_url, backdrop_url: winner.backdrop_url, source: winner.source }
+      : { appid: null, cover_url: null, backdrop_url: null };
+
+    setCachedCoverSearch(cacheKey, payload);
+    return res.json(payload);
   } catch (error) {
     console.error('Error resolving game cover:', error);
     return res.status(500).json({ error: 'Failed to search cover art' });
@@ -727,20 +930,10 @@ app.get('/api/igdb/search', async (req, res) => {
   }
 
   try {
-    const token = await getTwitchAccessToken();
-    const clientId = process.env.TWITCH_CLIENT_ID;
     const query = `search "${escapeIgdbString(term)}"; fields name, cover.url, screenshots.url, first_release_date, platforms.name; limit 10;`;
 
-    const response = await fetchWithTimeout('https://api.igdb.com/v4/games', {
-      method: 'POST',
-      headers: {
-        'Client-ID': clientId,
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-        'Content-Type': 'text/plain'
-      },
-      body: query
-    });
+    // igdbQuery handles token caching + one automatic retry on a stale/revoked token
+    const response = await igdbQuery(query);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -788,14 +981,153 @@ app.get('/api/igdb/search', async (req, res) => {
   }
 });
 
-// Endpoint to query loaded configuration keys
+// ---------------------------------------------------------------------------
+// DB proxy endpoints (audit B1-A): the frontend talks ONLY to /api/db/*.
+// Credentials stay on the server; the browser never sees the Supabase URL/key.
+// ---------------------------------------------------------------------------
+function requireSupabase(res) {
+  if (!supabaseConfigured()) {
+    res.status(503).json({ error: 'Database is not configured on this server (missing SUPABASE_URL or service key).' });
+    return false;
+  }
+  return true;
+}
+
+async function supabaseFetch(pathWithQuery, options = {}) {
+  const response = await fetchWithTimeout(
+    `${SUPABASE_URL}/rest/v1/${pathWithQuery}`,
+    { ...options, headers: { ...supabaseHeaders(), ...(options.headers || {}) } },
+    15000
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Supabase responded ${response.status}: ${text.slice(0, 300)}`);
+  }
+  return response;
+}
+
+// Read all games (DB row shape)
+app.get('/api/db/games', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  try {
+    const response = await supabaseFetch('games?select=*');
+    const rows = await response.json();
+    return res.json({ games: Array.isArray(rows) ? rows : [] });
+  } catch (error) {
+    console.error('GET /api/db/games failed:', error.message);
+    return res.status(502).json({ error: 'Failed to read games from database.' });
+  }
+});
+
+// Upsert one or many games. Body: { rows: [ {platform, external_id, title, ...} ] }
+app.post('/api/db/games/upsert', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const { rows } = req.body || {};
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ error: 'Body must be { rows: [...] } with at least one game.' });
+  }
+  if (rows.length > 10000) {
+    return res.status(400).json({ error: 'Too many rows in a single upsert (max 10000).' });
+  }
+  for (const row of rows) {
+    const problem = validateDbRow(row);
+    if (problem) {
+      return res.status(400).json({ error: `Invalid row (${JSON.stringify(row.external_id ?? null)}): ${problem}` });
+    }
+  }
+  try {
+    await supabaseFetch('games?on_conflict=platform,external_id', {
+      method: 'POST',
+      headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify(rows)
+    });
+    return res.json({ ok: true, count: rows.length });
+  } catch (error) {
+    console.error('POST /api/db/games/upsert failed:', error.message);
+    return res.status(502).json({ error: 'Failed to write games to database.' });
+  }
+});
+
+// Delete games. Body either:
+//   { matches: [ { platform, external_id } ] }              — exact rows
+//   { platformLike: 'Itch.io', externalIds: ['1','2'] }     — platform ILIKE + id IN list
+app.post('/api/db/games/delete', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const { matches, platformLike, externalIds } = req.body || {};
+
+  try {
+    if (Array.isArray(matches) && matches.length > 0) {
+      if (matches.length > 5000) return res.status(400).json({ error: 'Too many matches in one delete (max 5000).' });
+      for (const m of matches) {
+        if (!m || typeof m.platform !== 'string' || !m.platform.trim() || !m.external_id) {
+          return res.status(400).json({ error: 'Each match needs non-empty platform and external_id.' });
+        }
+      }
+      // PostgREST supports OR conditions: or=(and(platform.eq.A,external_id.eq.X),...)
+      const clauses = matches.map(m =>
+        `and(platform.eq.${encodeURIComponent(m.platform)},external_id.eq.${encodeURIComponent(String(m.external_id))})`
+      );
+      await supabaseFetch(`games?or=(${clauses.join(',')})`, { method: 'DELETE', headers: supabaseHeaders() });
+      return res.json({ ok: true });
+    }
+
+    if (typeof platformLike === 'string' && platformLike.trim() && Array.isArray(externalIds) && externalIds.length > 0) {
+      if (externalIds.length > 5000) return res.status(400).json({ error: 'Too many ids in one delete (max 5000).' });
+      const inList = externalIds.map(id => `"${String(id).replace(/"/g, '')}"`).join(',');
+      await supabaseFetch(
+        `games?platform=ilike.${encodeURIComponent(platformLike)}&external_id=in.(${encodeURIComponent(inList)})`,
+        { method: 'DELETE', headers: supabaseHeaders() }
+      );
+      return res.json({ ok: true });
+    }
+
+    return res.status(400).json({ error: 'Body must contain matches[] or platformLike+externalIds.' });
+  } catch (error) {
+    console.error('POST /api/db/games/delete failed:', error.message);
+    return res.status(502).json({ error: 'Failed to delete from database.' });
+  }
+});
+
+// Read settings row (id = 1)
+app.get('/api/db/settings', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  try {
+    const response = await supabaseFetch('settings?select=*&id=eq.1');
+    const rows = await response.json();
+    return res.json({ settings: Array.isArray(rows) && rows.length > 0 ? rows[0] : null });
+  } catch (error) {
+    console.error('GET /api/db/settings failed:', error.message);
+    return res.status(502).json({ error: 'Failed to read settings from database.' });
+  }
+});
+
+// Upsert the settings row. Body: arbitrary settings payload (id forced to 1).
+app.put('/api/db/settings', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return res.status(400).json({ error: 'Body must be a settings object.' });
+  }
+  try {
+    await supabaseFetch('settings?on_conflict=id', {
+      method: 'POST',
+      headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ ...payload, id: 1 })
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('PUT /api/db/settings failed:', error.message);
+    return res.status(502).json({ error: 'Failed to write settings to database.' });
+  }
+});
+
+// Endpoint to query loaded configuration keys — booleans only, NEVER credentials
+// (audit B1: this endpoint used to hand the Supabase URL + anon key to anyone).
 app.get('/api/config/status', (req, res) => {
   res.json({
     twitchConfigured: !!(process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET),
-    steamConfigured: !!(process.env.steam_web_api_key || process.env.STEAM_API_KEY),
-    supabaseConfigured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
-    supabaseUrl: process.env.SUPABASE_URL || null,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null
+    steamConfigured: !!STEAM_API_KEY,
+    supabaseConfigured: supabaseConfigured()
   });
 });
 
@@ -805,8 +1137,16 @@ app.get(/^(?!\/api\/).*/, (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
-  function startServer(portToTry) {
+  let httpServer = null;
+
+  function startServer(portToTry, attempt = 1) {
+    // Audit B10: bound the port-increment retries instead of recursing forever
+    if (attempt > 10) {
+      console.error(`Could not find a free port after ${attempt - 1} attempts (tried ${portToTry - attempt + 1}..${portToTry}). Giving up.`);
+      process.exit(1);
+    }
     const server = app.listen(portToTry, () => {
+      httpServer = server;
       console.log(`==================================================`);
       console.log(`   PC Game Tracker Server Running Locally!`);
       console.log(`   URL: http://localhost:${portToTry}`);
@@ -816,12 +1156,29 @@ if (process.env.NODE_ENV !== 'test') {
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
         console.warn(`Port ${portToTry} is in use. Trying port ${portToTry + 1}...`);
-        startServer(Number(portToTry) + 1);
+        startServer(Number(portToTry) + 1, attempt + 1);
       } else {
         console.error('Server error:', err);
       }
     });
   }
+
+  // Audit B10: graceful shutdown on container/platform stop signals
+  function shutdown(signal) {
+    console.log(`\n${signal} received — closing server...`);
+    if (!httpServer) process.exit(0);
+    httpServer.close(() => {
+      console.log('Server closed cleanly.');
+      process.exit(0);
+    });
+    // Force-exit if connections refuse to drain
+    setTimeout(() => {
+      console.warn('Forcing exit after shutdown timeout.');
+      process.exit(0);
+    }, 5000).unref();
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 
   startServer(PORT);
 }

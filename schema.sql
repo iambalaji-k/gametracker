@@ -30,10 +30,13 @@ CREATE TABLE IF NOT EXISTS public.settings (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Disable Row Level Security (RLS) since it's a private single-user project.
--- This allows direct read/write access from the frontend via the Anon Key.
-ALTER TABLE public.games DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.settings DISABLE ROW LEVEL SECURITY;
+-- Enable Row Level Security (RLS). All database access now goes through the
+-- backend using the service key, which bypasses RLS. Enabling RLS with no
+-- policies blocks all anon/authenticated browser access, so a leaked anon key
+-- can no longer read or wipe the tables. Run these statements in the Supabase
+-- SQL editor to apply to an existing database.
+ALTER TABLE public.games ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 
 -- Migration alters (safe to run on existing databases to add missing columns)
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS stove_member_no TEXT;

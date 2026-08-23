@@ -274,8 +274,48 @@ const LEGACY_EXTRACTOR_SCRIPT = `(async () => {
   }
 })();`;
 
-// Supabase Client Reference
-let supabaseClient = null;
+// ---------------------------------------------------------------------------
+// Cloud DB proxy client (backend audit B1-A): the browser never holds Supabase
+// credentials — all database access goes through /api/db/* on this same server.
+// ---------------------------------------------------------------------------
+function isCloudEnabled() {
+  return !!(appState.supabaseConfig && appState.supabaseConfig.enabled);
+}
+
+async function dbRequest(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Database request failed (${res.status})`);
+  }
+  return data;
+}
+
+async function dbUpsertGames(rows) {
+  return dbRequest('/api/db/games/upsert', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows })
+  });
+}
+
+// matches: [{ platform, external_id }]
+async function dbDeleteGames(matches) {
+  return dbRequest('/api/db/games/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ matches })
+  });
+}
+
+// platformLike: ILIKE pattern, externalIds: string[] — used for dedupe/itch cleanup
+async function dbDeleteGamesByPlatformIds(platformLike, externalIds) {
+  return dbRequest('/api/db/games/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platformLike, externalIds })
+  });
+}
 
 // DOM Elements
 const gamesGrid = document.getElementById('games-grid');
@@ -348,6 +388,7 @@ const resolvedLegacyCard = document.getElementById('resolved-legacy-card');
 // Add Game inputs
 const addGameBtn = document.getElementById('add-game-btn');
 const addGameModal = document.getElementById('add-game-modal');
+const confirmModalEl = document.getElementById('confirm-modal');
 const closeAddGameBtn = document.getElementById('close-add-game-btn');
 const searchSourceSelect = document.getElementById('search-source-select');
 const steamSearchInput = document.getElementById('steam-search-input');
@@ -390,6 +431,10 @@ const BACKDROP_LIFETIME = 10000; // ms a backdrop stays the focus
 const BACKDROP_FADE = 1000;      // ms crossfade duration
 const BACKDROP_MIN_OPACITY = 0.45;
 const BACKDROP_MAX_OPACITY = 0.60;
+// Luminance sampling was removed: cross-origin images taint the canvas, so
+// getImageData always threw and the value silently fell back to this midpoint
+// anyway (audit F6). Fixed midpoint opacity it is.
+const BACKDROP_DEFAULT_OPACITY = (BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2;
 const BACKDROP_RETRY_COOLDOWN = 20000; // ms before retrying a failed image
 
 // Six extremely subtle Ken Burns motions. Each image picks a different one
@@ -413,6 +458,16 @@ let backdropLastMotion = null;
 let backdropTimer = null;
 let backdropRunning = false;
 const backdropFailureCooldown = new Map(); // url -> next-allowed timestamp
+const BACKDROP_COOLDOWN_MAX_ENTRIES = 500;
+
+// Record a backdrop load failure with retry cooldown, keeping the map bounded.
+function markBackdropFailure(url) {
+  if (!backdropFailureCooldown.has(url) && backdropFailureCooldown.size >= BACKDROP_COOLDOWN_MAX_ENTRIES) {
+    const oldest = backdropFailureCooldown.keys().next().value;
+    if (oldest !== undefined) backdropFailureCooldown.delete(oldest);
+  }
+  backdropFailureCooldown.set(url, Date.now() + BACKDROP_RETRY_COOLDOWN);
+}
 
 // Build the rotation pool from the synced library (backdrop > steam hero > cover).
 function buildBackdropPool() {
@@ -441,32 +496,7 @@ function preloadImage(url) {
   });
 }
 
-// Module-level canvas instance reused to avoid GC overhead
-const sampleCanvas = document.createElement('canvas');
-sampleCanvas.width = 16;
-sampleCanvas.height = 16;
-const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-
-// Best-effort average luminance -> opacity (brighter images sit dimmer).
-// Cross-origin images taint the canvas; we catch that and return null (default).
-function sampleBrightness(img) {
-  try {
-    const w = 16, h = 16;
-    sampleCtx.drawImage(img, 0, 0, w, h);
-    const data = sampleCtx.getImageData(0, 0, w, h).data;
-    let sum = 0, n = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-      sum += lum; n++;
-    }
-    const t = Math.min(1, Math.max(0, (sum / n) / 255));
-    // Bright (t->1) -> lower opacity; dark (t->0) -> higher opacity.
-    return BACKDROP_MAX_OPACITY - t * (BACKDROP_MAX_OPACITY - BACKDROP_MIN_OPACITY);
-  } catch (e) {
-    return null;
-  }
-}
-
+// Pick a Ken Burns motion variant that never repeats back-to-back.
 function pickMotion() {
   let m;
   do {
@@ -549,7 +579,7 @@ async function advanceBackdrop() {
     img.src = only.url;
     img.loading = 'eager';
     img.setAttribute('fetchpriority', 'high');
-    const op = sampleBrightness(pre) ?? ((BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2);
+    const op = BACKDROP_DEFAULT_OPACITY;
     layer.style.setProperty('--backdrop-opacity', op.toFixed(3));
     const m = pickMotion();
     layer.style.setProperty('--kb-from', m.from);
@@ -573,7 +603,7 @@ async function advanceBackdrop() {
     pre = await preloadImage(item.url);
   } catch (e) {
     // Load failed: keep the current backdrop, retry this one later, move on.
-    backdropFailureCooldown.set(item.url, Date.now() + BACKDROP_RETRY_COOLDOWN);
+    markBackdropFailure(item.url);
     scheduleNextBackdrop();
     return;
   }
@@ -588,7 +618,7 @@ async function advanceBackdrop() {
   if (isFirstPaint) img.setAttribute('fetchpriority', 'high');
   else img.removeAttribute('fetchpriority');
   img.src = item.url;
-  const op = sampleBrightness(pre) ?? ((BACKDROP_MIN_OPACITY + BACKDROP_MAX_OPACITY) / 2);
+  const op = BACKDROP_DEFAULT_OPACITY;
   incoming.style.setProperty('--backdrop-opacity', op.toFixed(3));
   const m = pickMotion();
   incoming.style.setProperty('--kb-from', m.from);
@@ -709,8 +739,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check Twitch/IGDB API credentials status
   await checkIgdbStatus();
   
-  // If Supabase is connected, fetch settings and games from there
-  if (appState.supabaseConfig.enabled && supabaseClient) {
+  // If cloud sync is enabled (server-side Supabase), fetch settings and games from there
+  if (isCloudEnabled()) {
     if (statusText) statusText.textContent = 'SYNCING VAULT...';
     await fetchSettingsFromSupabase();
     await fetchGamesFromSupabase();
@@ -827,8 +857,8 @@ function loadSettingsFromStorage() {
 
 // Save settings to local storage and Supabase database
 async function saveSettingsToStorage() {
+  const supabaseEnabled = !!(appState.supabaseConfig && appState.supabaseConfig.enabled);
   const dataToSave = {
-    games: appState.games,
     steamId: appState.steamId,
     vanityUrl: appState.vanityUrl,
     gogUsername: appState.gogUsername,
@@ -840,6 +870,13 @@ async function saveSettingsToStorage() {
     blacklistAppIds: appState.blacklistAppIds,
     blacklistTitles: appState.blacklistTitles
   };
+
+  // With cloud sync enabled the games live in Supabase — persisting the whole
+  // library locally would blow the ~5MB localStorage quota and silently lose
+  // edits (audit F8). Only keep the games array for the no-cloud mode.
+  if (!supabaseEnabled) {
+    dataToSave.games = appState.games;
+  }
   
   try {
     localStorage.setItem('crossplay_state', JSON.stringify(dataToSave));
@@ -847,13 +884,13 @@ async function saveSettingsToStorage() {
     console.error('Failed to write crossplay_state to localStorage:', e);
   }
 
-  // Sync to Supabase settings table if connected
-  if (supabaseClient) {
+  // Sync to Supabase settings table (via backend proxy) if connected
+  if (supabaseEnabled) {
     try {
-      const { error } = await supabaseClient
-        .from('settings')
-        .upsert({
-          id: 1, // Constrained to single row
+      await dbRequest('/api/db/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           steam_id: appState.steamId,
           vanity_url: appState.vanityUrl,
           gog_username: appState.gogUsername,
@@ -864,16 +901,13 @@ async function saveSettingsToStorage() {
           blacklist_app_ids: appState.blacklistAppIds,
           blacklist_titles: appState.blacklistTitles,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-      
-      if (error) {
-        console.error('Failed to sync settings to Supabase:', error);
-        if (error.message && (error.message.includes('itch_collection_url') || error.code === 'PGRST204')) {
-          showToast('Please run the migration SQL in Supabase SQL editor to add the itch_collection_url column.', 'warning');
-        }
-      }
+        })
+      });
     } catch (err) {
       console.error('Failed to sync settings to Supabase:', err);
+      if (err.message && err.message.includes('itch_collection_url')) {
+        showToast('Please run the migration SQL in Supabase SQL editor to add the itch_collection_url column.', 'warning');
+      }
     }
   }
 }
@@ -882,7 +916,7 @@ async function saveSettingsToStorage() {
 function extractStoveMemberNo(input) {
   if (!input) return '';
   const trimmed = String(input).trim();
-  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2}\/)?(\d+)/i);
+  const urlMatch = trimmed.match(/onstove\.com\/(?:[a-z]{2,5}(?:[_-][a-z]{2,5})?\/)?(\d+)/i);
   if (urlMatch) {
     return urlMatch[1];
   }
@@ -1014,26 +1048,165 @@ function deduplicateGamesList(gamesList, autoCleanSupabase = false) {
   }
 
   // If requested and supabase is connected, delete duplicate rows in the background
-  if (autoCleanSupabase && supabaseClient && duplicateExternalIdsByPlatform.size > 0) {
+  if (autoCleanSupabase && isCloudEnabled() && duplicateExternalIdsByPlatform.size > 0) {
     for (const [plat, idSet] of duplicateExternalIdsByPlatform.entries()) {
       const ids = Array.from(idSet);
       if (ids.length > 0) {
         console.log(`[CrossPlay] Cleaning up ${ids.length} duplicate entries for ${plat} in Supabase:`, ids);
-        supabaseClient
-          .from('games')
-          .delete()
-          .ilike('platform', plat)
-          .in('external_id', ids)
-          .then(({ error }) => {
-            if (error) console.warn('[CrossPlay] Failed to remove duplicate rows from Supabase:', error);
-            else console.log(`[CrossPlay] Cleaned up duplicate rows for ${plat} from Supabase.`);
-          })
-          .catch(console.error);
+        dbDeleteGamesByPlatformIds(plat, ids)
+          .then(() => console.log(`[CrossPlay] Cleaned up duplicate rows for ${plat} from Supabase.`))
+          .catch((err) => console.warn('[CrossPlay] Failed to remove duplicate rows from Supabase:', err));
       }
     }
   }
 
   return Array.from(uniqueMap.values());
+}
+
+// ---------------------------------------------------------------------------
+// Security & data-integrity helpers (docs/frontend-audit.md F1 / F2 / F3.3)
+// ---------------------------------------------------------------------------
+
+// Escape a value for safe interpolation into HTML text/attribute contexts.
+// ALWAYS use this when injecting game names, URLs, or error messages into
+// innerHTML templates — that data comes from scraped third-party pages,
+// pasted JSON, imported backups, and the database.
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Only http(s) artwork URLs are allowed (blocks javascript:, data:, etc.).
+function isValidHttpUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+// Returns a URL safe for src="..." usage, or '' if it is not a valid http(s) URL.
+function safeArtUrl(url) {
+  return isValidHttpUrl(url) ? url.trim() : '';
+}
+
+// Strip control characters and cap length.
+function cleanTextField(value, maxLen) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLen);
+}
+
+// Validate/coerce one game object coming from an untrusted source
+// (backup file, pasted extractor JSON). Returns a sanitized copy,
+// or null if the entry is unusable. See audit F2.
+function sanitizeGame(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  let externalId = raw.external_id;
+  if (typeof externalId === 'number' && Number.isFinite(externalId)) externalId = String(externalId);
+  if (typeof externalId !== 'string') return null;
+  externalId = externalId.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 64);
+  if (!externalId) return null;
+
+  const name = cleanTextField(raw.name ?? raw.title, 256);
+  if (!name) return null;
+
+  const playtime = Number(raw.playtime_forever);
+  const lastPlayed = Number(raw.rtime_last_played);
+
+  return {
+    ...raw,
+    external_id: externalId.trim(),
+    platform: cleanTextField(raw.platform, 32) || 'Legacy',
+    appid: (typeof raw.appid === 'string' || typeof raw.appid === 'number') ? raw.appid : '',
+    name,
+    playtime_forever: Number.isFinite(playtime) && playtime >= 0 ? Math.floor(playtime) : 0,
+    rtime_last_played: Number.isInteger(lastPlayed) && lastPlayed >= 0 ? lastPlayed : 0,
+    cover_url: isValidHttpUrl(raw.cover_url) ? raw.cover_url.trim() : null,
+    backdrop_url: isValidHttpUrl(raw.backdrop_url) ? raw.backdrop_url.trim() : null
+  };
+}
+
+// Single source of truth for the Supabase `games` row shape (audit F3.3).
+// Every cloud write must go through this so fields can never drift apart.
+function toDbRow(game) {
+  return {
+    external_id: String(game.external_id),
+    platform: game.platform,
+    title: game.name,
+    playtime_forever: game.playtime_forever || 0,
+    last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
+    cover_url: game.cover_url || null,
+    backdrop_url: game.backdrop_url || null
+  };
+}
+
+// Global guard against concurrent sync/maintenance operations (audit F9).
+let syncInProgress = false;
+const SYNC_BUSY_MESSAGE = 'Another sync or repair task is already running. Please wait for it to finish.';
+
+// Verify whether an image URL actually loads cleanly (module scope so both
+// maintenance handlers AND verifyAndFixSteamBackdrops can use it).
+const imageValidationCache = new Map(); // url -> { valid, is404 }
+const IMAGE_VALIDATION_CACHE_MAX = 500;
+
+function isImageValidStatus(url) {
+  if (!url || typeof url !== 'string' || !url.trim()) return Promise.resolve({ valid: false, is404: false });
+  const trimmed = url.trim();
+  if (imageValidationCache.has(trimmed)) {
+    return Promise.resolve(imageValidationCache.get(trimmed));
+  }
+  // Bound the cache: evict the oldest entry once full (Map preserves insertion order)
+  if (imageValidationCache.size >= IMAGE_VALIDATION_CACHE_MAX) {
+    const oldest = imageValidationCache.keys().next().value;
+    if (oldest !== undefined) imageValidationCache.delete(oldest);
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    let done = false;
+    // Increased timeout to 5000ms for slow networks
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        img.src = '';
+        const res = { valid: false, is404: false }; // Timeout is NOT an explicit 404
+        imageValidationCache.set(trimmed, res);
+        resolve(res);
+      }
+    }, 5000);
+    img.onload = () => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        const res = { valid: true, is404: false };
+        imageValidationCache.set(trimmed, res);
+        resolve(res);
+      }
+    };
+    img.onerror = () => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        const res = { valid: false, is404: true }; // Explicit 404 / image load failure
+        imageValidationCache.set(trimmed, res);
+        resolve(res);
+      }
+    };
+    img.src = trimmed;
+  });
+}
+
+async function isImageValid(url) {
+  const res = await isImageValidStatus(url);
+  return res.valid;
 }
 
 // Setup Event Listeners
@@ -1455,17 +1628,20 @@ function setupEventListeners() {
     }
   });
 
-  // Epic Games - Import Paste Action
-  importEpicBtn.addEventListener('click', async () => {
-    const rawJson = epicJsonInput.value.trim();
+  // Shared importer for pasted extractor JSON — Epic & Legacy (audit F3.2).
+  // Every parsed game passes through sanitizeGame() before it can reach
+  // state or the database (audit F2: pasted text is untrusted input).
+  async function importPastedLibrary({ inputEl, buttonEl, resolvedCardEl, connectedFlagKey, platform }) {
+    const rawJson = inputEl.value.trim();
     if (!rawJson) {
       showToast('Please paste the extracted JSON array first!', 'error');
       return;
     }
 
-    importEpicBtn.disabled = true;
-    importEpicBtn.textContent = 'Parsing & Importing...';
-    
+    const idleLabel = buttonEl.textContent;
+    buttonEl.disabled = true;
+    buttonEl.textContent = 'Parsing & Importing...';
+
     try {
       const parsed = JSON.parse(rawJson);
       if (!Array.isArray(parsed)) {
@@ -1473,35 +1649,36 @@ function setupEventListeners() {
       }
 
       showToast(`Pasted ${parsed.length} games. Resolving cover arts via Steam API...`, 'info');
-      
-      // Map JSON properties to our internal format
-      const existingEpicMap = new Map();
-      appState.games.filter(g => g.platform === 'Epic').forEach(g => {
-        existingEpicMap.set(String(g.external_id), g);
+
+      // Map extractor JSON properties to our internal format
+      const existingMap = new Map();
+      appState.games.filter(g => g.platform === platform).forEach(g => {
+        existingMap.set(String(g.external_id), g);
       });
 
-      const newEpicGames = parsed
+      const newGames = parsed
         .filter(game => !shouldExcludeGame(game.title, game.id))
         .map(game => {
           const extId = game.id || String(Math.floor(Math.random() * 1000000));
-          const existing = existingEpicMap.get(extId);
-          return {
+          const existing = existingMap.get(extId);
+          return sanitizeGame({
             external_id: extId,
-            platform: 'Epic',
+            platform,
             appid: game.id || '',
             name: game.title,
             playtime_forever: (existing && existing.playtime_forever) ? existing.playtime_forever : 0,
             rtime_last_played: game.date ? Math.floor(new Date(game.date).getTime() / 1000) : ((existing && existing.rtime_last_played) ? existing.rtime_last_played : 0),
             cover_url: (existing && existing.cover_url) ? existing.cover_url : null,
             backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
-          };
-        });
+          });
+        })
+        .filter(Boolean);
 
       // Resolve cover arts in parallel chunks to avoid server overloading
       const batchSize = 10;
-      for (let i = 0; i < newEpicGames.length; i += batchSize) {
-        const batch = newEpicGames.slice(i, i + batchSize);
-        
+      for (let i = 0; i < newGames.length; i += batchSize) {
+        const batch = newGames.slice(i, i + batchSize);
+
         await Promise.all(batch.map(async game => {
           try {
             const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
@@ -1520,138 +1697,56 @@ function setupEventListeners() {
         }));
       }
 
-      // Merge into state (overwrite only Epic, preserve GOG and Steam)
-      appState.games = [
-        ...appState.games.filter(g => g.platform !== 'Epic'),
-        ...newEpicGames
-      ];
+      // Merge into state (overwrite only this platform, preserve the rest)
+      appState.games = deduplicateGamesList([
+        ...appState.games.filter(g => g.platform !== platform),
+        ...newGames
+      ], false);
 
-      appState.epicConnected = true;
+      appState[connectedFlagKey] = true;
       saveSettingsToStorage();
 
-      // Show resolved card
-      resolvedEpicCard.classList.remove('hidden');
-      epicJsonInput.value = ''; // Clean up
+      resolvedCardEl.classList.remove('hidden');
+      inputEl.value = '';
 
-      if (appState.supabaseConfig.enabled && supabaseClient) {
-        showToast('Syncing Epic library to Supabase...', 'info');
+      if (isCloudEnabled()) {
+        showToast(`Syncing ${platform} library to Supabase...`, 'info');
         await syncGamesToSupabase(appState.games);
       }
 
       emptyState.classList.add('hidden');
       renderGames();
       updateStats();
-      showToast(`Successfully imported ${newEpicGames.length} Epic Games!`, 'success');
+      showToast(`Successfully imported ${newGames.length} ${platform} Games!`, 'success');
       showPage('library');
     } catch (err) {
       showToast(`Import failed: ${err.message}`, 'error');
     } finally {
-      importEpicBtn.disabled = false;
-      importEpicBtn.textContent = 'Import Epic Games Library';
+      buttonEl.disabled = false;
+      buttonEl.textContent = idleLabel;
     }
-  });
+  }
 
-  // Legacy Games - Copy Extractor Script
-  copyLegacyScriptBtn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(LEGACY_EXTRACTOR_SCRIPT);
-      showToast('Legacy extractor script copied to clipboard! Run it on Legacy Games Downloads/Free Games page.', 'success');
-    } catch (err) {
-      showToast('Failed to copy automatically. Please copy the script from the source.', 'error');
-    }
+  // Epic Games - Import Paste Action
+  importEpicBtn.addEventListener('click', () => {
+    importPastedLibrary({
+      inputEl: epicJsonInput,
+      buttonEl: importEpicBtn,
+      resolvedCardEl: resolvedEpicCard,
+      connectedFlagKey: 'epicConnected',
+      platform: 'Epic'
+    });
   });
 
   // Legacy Games - Import Paste Action
-  importLegacyBtn.addEventListener('click', async () => {
-    const rawJson = legacyJsonInput.value.trim();
-    if (!rawJson) {
-      showToast('Please paste the extracted JSON array first!', 'error');
-      return;
-    }
-
-    importLegacyBtn.disabled = true;
-    importLegacyBtn.textContent = 'Parsing & Importing...';
-    
-    try {
-      const parsed = JSON.parse(rawJson);
-      if (!Array.isArray(parsed)) {
-        throw new Error('Pasted content is not a valid JSON array.');
-      }
-
-      showToast(`Pasted ${parsed.length} games. Resolving cover arts via Steam API...`, 'info');
-      
-      const existingLegacyMap = new Map();
-      appState.games.filter(g => g.platform === 'Legacy').forEach(g => {
-        existingLegacyMap.set(String(g.external_id), g);
-      });
-
-      const newLegacyGames = parsed
-        .filter(game => !shouldExcludeGame(game.title, game.id))
-        .map(game => {
-          const extId = game.id || String(Math.floor(Math.random() * 1000000));
-          const existing = existingLegacyMap.get(extId);
-          return {
-            external_id: extId,
-            platform: 'Legacy',
-            appid: game.id || '',
-            name: game.title,
-            playtime_forever: (existing && existing.playtime_forever) ? existing.playtime_forever : 0,
-            rtime_last_played: (existing && existing.rtime_last_played) ? existing.rtime_last_played : 0,
-            cover_url: (existing && existing.cover_url) ? existing.cover_url : null,
-            backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
-          };
-        });
-
-      // Resolve covers in batches
-      const batchSize = 10;
-      for (let i = 0; i < newLegacyGames.length; i += batchSize) {
-        const batch = newLegacyGames.slice(i, i + batchSize);
-        await Promise.all(batch.map(async game => {
-          try {
-            const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
-            if (res.ok) {
-              const coverData = await res.json();
-              if (coverData.cover_url) {
-                game.cover_url = coverData.cover_url;
-              }
-              if (coverData.backdrop_url) {
-                game.backdrop_url = coverData.backdrop_url;
-              }
-            }
-          } catch (e) {
-            console.error(`Failed to resolve cover for ${game.name}:`, e);
-          }
-        }));
-      }
-
-      // Merge into state
-      appState.games = [
-        ...appState.games.filter(g => g.platform !== 'Legacy'),
-        ...newLegacyGames
-      ];
-
-      appState.legacyConnected = true;
-      saveSettingsToStorage();
-
-      resolvedLegacyCard.classList.remove('hidden');
-      legacyJsonInput.value = '';
-
-      if (appState.supabaseConfig.enabled && supabaseClient) {
-        showToast('Syncing Legacy Games library to Supabase...', 'info');
-        await syncGamesToSupabase(appState.games);
-      }
-
-      emptyState.classList.add('hidden');
-      renderGames();
-      updateStats();
-      showToast(`Successfully imported ${newLegacyGames.length} Legacy Games!`, 'success');
-      showPage('library');
-    } catch (err) {
-      showToast(`Import failed: ${err.message}`, 'error');
-    } finally {
-      importLegacyBtn.disabled = false;
-      importLegacyBtn.textContent = 'Import Legacy Games Library';
-    }
+  importLegacyBtn.addEventListener('click', () => {
+    importPastedLibrary({
+      inputEl: legacyJsonInput,
+      buttonEl: importLegacyBtn,
+      resolvedCardEl: resolvedLegacyCard,
+      connectedFlagKey: 'legacyConnected',
+      platform: 'Legacy'
+    });
   });
   // Supabase connections are now handled automatically via backend configuration.
 
@@ -1778,8 +1873,8 @@ function setupEventListeners() {
         const div = document.createElement('div');
         div.className = 'search-result-item';
         div.innerHTML = `
-          <img class="search-result-img" src="${item.tiny_image}" alt="${item.name}">
-          <span class="search-result-name">${item.name}</span>
+          <img class="search-result-img" src="${safeArtUrl(item.tiny_image)}" alt="${escapeHtml(item.name)}">
+          <span class="search-result-name">${escapeHtml(item.name)}</span>
         `;
         div.addEventListener('click', () => {
           manualTitleInput.value = item.name;
@@ -1875,8 +1970,8 @@ function setupEventListeners() {
       cover_url: coverUrl
     };
 
-    // Check for duplicates
-    const exists = appState.games.some(g => g.name.toLowerCase() === title.toLowerCase() && g.platform === platform);
+    // Check for duplicates (normalized title comparison, consistent with the rest of the app — audit F10)
+    const exists = appState.games.some(g => g.platform === platform && normalizeGameTitle(g.name) === normalizeGameTitle(title));
     if (exists) {
       showToast(`"${title}" is already in your library on ${platform}!`, 'error');
       return;
@@ -1886,21 +1981,10 @@ function setupEventListeners() {
     appState.games.push(newGame);
     saveSettingsToStorage();
 
-    // Sync with Supabase if enabled
-    if (appState.supabaseConfig.enabled && supabaseClient) {
+    // Sync with Supabase if enabled (via backend proxy)
+    if (isCloudEnabled()) {
       try {
-        const row = {
-          external_id: externalId,
-          platform: platform,
-          title: title,
-          playtime_forever: playtimeMinutes,
-          last_played: lastPlayedStr ? new Date(lastPlayedStr).toISOString() : null,
-          cover_url: coverUrl
-        };
-        const { error } = await supabaseClient
-          .from('games')
-          .upsert(row, { onConflict: 'platform,external_id' });
-        if (error) throw error;
+        await dbUpsertGames([toDbRow(newGame)]);
         showToast('Synced to cloud database successfully!', 'success');
       } catch (err) {
         console.error(err);
@@ -1921,189 +2005,102 @@ function setupEventListeners() {
     showToast(`Successfully added "${title}"!`, 'success');
   });
 
+  // Shared artwork-resolution routine for the maintenance buttons (audit F3.1).
+  // Guarded by the global syncInProgress flag so it can never interleave
+  // with a running platform sync or another repair task.
+  async function resolveArtworkFor(targetGames, { button, busyHtml, idleHtml, startToast, successToast, failureToast }) {
+    if (syncInProgress) {
+      showToast(SYNC_BUSY_MESSAGE, 'info');
+      return;
+    }
+
+    button.disabled = true;
+    button.innerHTML = busyHtml;
+    lucide.createIcons();
+    showToast(startToast, 'info');
+
+    let resolvedCount = 0;
+    const batchSize = 5;
+    try {
+      for (let i = 0; i < targetGames.length; i += batchSize) {
+        const batch = targetGames.slice(i, i + batchSize);
+        await Promise.all(batch.map(async game => {
+          try {
+            const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.cover_url) {
+                game.cover_url = data.cover_url;
+                resolvedCount++;
+
+                if (data.backdrop_url) {
+                  game.backdrop_url = data.backdrop_url;
+                }
+
+                if (isCloudEnabled()) {
+                  await dbUpsertGames([toDbRow(game)]);
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`Failed to resolve cover for ${game.name}:`, e);
+          }
+        }));
+      }
+
+      saveSettingsToStorage();
+      renderGames();
+      updateStats();
+
+      if (resolvedCount > 0) {
+        showToast(successToast(resolvedCount), 'success');
+      } else {
+        showToast(failureToast, 'info');
+      }
+    } finally {
+      button.disabled = false;
+      button.innerHTML = idleHtml;
+      lucide.createIcons();
+    }
+  }
+
   // Resolve Missing Covers trigger
-  resolveCoversBtn.addEventListener('click', async () => {
+  resolveCoversBtn.addEventListener('click', () => {
     const missingCoverGames = appState.games.filter(g => !g.cover_url);
     if (missingCoverGames.length === 0) {
       showToast('All games in your library already have cover art!', 'info');
       return;
     }
-
-    resolveCoversBtn.disabled = true;
-    resolveCoversBtn.innerHTML = '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Resolving...';
-    lucide.createIcons();
-    showToast(`Scanning and resolving covers for ${missingCoverGames.length} games...`, 'info');
-
-    let resolvedCount = 0;
-    const batchSize = 5;
-    for (let i = 0; i < missingCoverGames.length; i += batchSize) {
-      const batch = missingCoverGames.slice(i, i + batchSize);
-      await Promise.all(batch.map(async game => {
-        try {
-          const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.cover_url) {
-              game.cover_url = data.cover_url;
-              resolvedCount++;
-              
-              if (data.backdrop_url) {
-                game.backdrop_url = data.backdrop_url;
-              }
-              
-              if (appState.supabaseConfig.enabled && supabaseClient) {
-                const row = {
-                  external_id: String(game.external_id),
-                  platform: game.platform,
-                  title: game.name,
-                  playtime_forever: game.playtime_forever,
-                  last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-                  cover_url: game.cover_url,
-                  backdrop_url: game.backdrop_url || null
-                };
-                await supabaseClient
-                  .from('games')
-                  .upsert(row, { onConflict: 'platform,external_id' });
-              }
-            }
-          }
-        } catch (e) {
-          console.error(`Failed to resolve cover for ${game.name}:`, e);
-        }
-      }));
-    }
-
-    saveSettingsToStorage();
-    renderGames();
-    updateStats();
-    
-    resolveCoversBtn.disabled = false;
-    resolveCoversBtn.innerHTML = '<i data-lucide="image-down" class="inline-icon"></i> Scan & Resolve Missing Covers';
-    lucide.createIcons();
-    
-    if (resolvedCount > 0) {
-      showToast(`Successfully resolved cover art for ${resolvedCount} games!`, 'success');
-    } else {
-      showToast('Could not find cover art for any of the missing games.', 'info');
-    }
+    resolveArtworkFor(missingCoverGames, {
+      button: resolveCoversBtn,
+      busyHtml: '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Resolving...',
+      idleHtml: '<i data-lucide="image-down" class="inline-icon"></i> Scan & Resolve Missing Covers',
+      startToast: `Scanning and resolving covers for ${missingCoverGames.length} games...`,
+      successToast: (n) => `Successfully resolved cover art for ${n} games!`,
+      failureToast: 'Could not find cover art for any of the missing games.'
+    });
   });
 
   // Resolve GOG landscape covers trigger
-  resolveGogCoversBtn.addEventListener('click', async () => {
+  resolveGogCoversBtn.addEventListener('click', () => {
     const gogGames = appState.games.filter(g => g.platform === 'GOG');
     if (gogGames.length === 0) {
       showToast('No GOG games in your library to resolve covers for!', 'info');
       return;
     }
-
-    resolveGogCoversBtn.disabled = true;
-    resolveGogCoversBtn.innerHTML = '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Resolving GOG Covers...';
-    lucide.createIcons();
-    showToast(`Scanning and upgrading covers for ${gogGames.length} GOG games...`, 'info');
-
-    let resolvedCount = 0;
-    const batchSize = 5;
-    for (let i = 0; i < gogGames.length; i += batchSize) {
-      const batch = gogGames.slice(i, i + batchSize);
-      await Promise.all(batch.map(async game => {
-        try {
-          const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.cover_url) {
-              game.cover_url = data.cover_url;
-              resolvedCount++;
-              
-              if (data.backdrop_url) {
-                game.backdrop_url = data.backdrop_url;
-              }
-              
-              if (appState.supabaseConfig.enabled && supabaseClient) {
-                const row = {
-                  external_id: String(game.external_id),
-                  platform: game.platform,
-                  title: game.name,
-                  playtime_forever: game.playtime_forever,
-                  last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-                  cover_url: game.cover_url,
-                  backdrop_url: game.backdrop_url || null
-                };
-                await supabaseClient
-                  .from('games')
-                  .upsert(row, { onConflict: 'platform,external_id' });
-              }
-            }
-          }
-        } catch (e) {
-          console.error(`Failed to resolve cover for ${game.name}:`, e);
-        }
-      }));
-    }
-
-    saveSettingsToStorage();
-    renderGames();
-    updateStats();
-    
-    resolveGogCoversBtn.disabled = false;
-    resolveGogCoversBtn.innerHTML = '<i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)';
-    lucide.createIcons();
-    
-    if (resolvedCount > 0) {
-      showToast(`Successfully upgraded cover art for ${resolvedCount} GOG games!`, 'success');
-    } else {
-      showToast('Could not find vertical cover art for any GOG games.', 'info');
-    }
+    resolveArtworkFor(gogGames, {
+      button: resolveGogCoversBtn,
+      busyHtml: '<i class="inline-icon syncing-rotate" data-lucide="refresh-cw"></i> Resolving GOG Covers...',
+      idleHtml: '<i data-lucide="image" class="inline-icon"></i> Upgrade GOG Covers to Vertical (IGDB/Steam)',
+      startToast: `Scanning and upgrading covers for ${gogGames.length} GOG games...`,
+      successToast: (n) => `Successfully upgraded cover art for ${n} GOG games!`,
+      failureToast: 'Could not find vertical cover art for any GOG games.'
+    });
   });
 
-  // Helper to verify if an image URL actually loads cleanly
-  // Returns { valid: boolean, is404: boolean } to distinguish explicit 404/load errors from network timeouts.
-  const imageValidationCache = new Map();
-  function isImageValidStatus(url) {
-    if (!url || typeof url !== 'string' || !url.trim()) return Promise.resolve({ valid: false, is404: false });
-    const trimmed = url.trim();
-    if (imageValidationCache.has(trimmed)) {
-      return Promise.resolve(imageValidationCache.get(trimmed));
-    }
-    return new Promise((resolve) => {
-      const img = new Image();
-      let done = false;
-      // Increased timeout to 5000ms for slow networks
-      const timer = setTimeout(() => {
-        if (!done) {
-          done = true;
-          img.src = '';
-          const res = { valid: false, is404: false }; // Timeout is NOT an explicit 404
-          imageValidationCache.set(trimmed, res);
-          resolve(res);
-        }
-      }, 5000);
-      img.onload = () => {
-        if (!done) {
-          done = true;
-          clearTimeout(timer);
-          const res = { valid: true, is404: false };
-          imageValidationCache.set(trimmed, res);
-          resolve(res);
-        }
-      };
-      img.onerror = () => {
-        if (!done) {
-          done = true;
-          clearTimeout(timer);
-          const res = { valid: false, is404: true }; // Explicit 404 / image load failure
-          imageValidationCache.set(trimmed, res);
-          resolve(res);
-        }
-      };
-      img.src = trimmed;
-    });
-  }
-
-  // Wrapper for boolean checks
-  async function isImageValid(url) {
-    const res = await isImageValidStatus(url);
-    return res.valid;
-  }
+  // NOTE: isImageValid / isImageValidStatus now live at module scope so that
+  // verifyAndFixSteamBackdrops() (which previously hit a ReferenceError) can
+  // also use them.
 
   // Refresh & Repair Backdrops: populate or replace ONLY missing or invalid (broken 404) backdrops.
   // NEVER modifies cover_url! Clears existing backdrops ONLY on explicit 404 error!
@@ -2112,7 +2109,19 @@ function setupEventListeners() {
       showToast('Your library is empty. Sync a platform first!', 'info');
       return;
     }
+    if (syncInProgress) {
+      showToast(SYNC_BUSY_MESSAGE, 'info');
+      return;
+    }
+    syncInProgress = true;
+    try {
+      await runBackdropRepair();
+    } finally {
+      syncInProgress = false;
+    }
+  });
 
+  async function runBackdropRepair() {
     const progressContainer = document.getElementById('backdrop-progress-container');
     const progressText = document.getElementById('backdrop-progress-text');
     const progressPercent = document.getElementById('backdrop-progress-percent');
@@ -2183,19 +2192,8 @@ function setupEventListeners() {
           }
 
           // Sync backdrop change to Supabase (WITHOUT touching cover_url)
-          if (appState.supabaseConfig.enabled && supabaseClient) {
-            const row = {
-              external_id: String(game.external_id),
-              platform: game.platform,
-              title: game.name,
-              playtime_forever: game.playtime_forever,
-              last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-              cover_url: game.cover_url,
-              backdrop_url: game.backdrop_url || null
-            };
-            await supabaseClient
-              .from('games')
-              .upsert(row, { onConflict: 'platform,external_id' });
+          if (isCloudEnabled()) {
+            await dbUpsertGames([toDbRow(game)]);
           }
         } catch (e) {
           console.error(`Failed to repair backdrop for ${game.name}:`, e);
@@ -2240,7 +2238,7 @@ function setupEventListeners() {
         progressContainer.style.display = 'none';
       }
     }, 5000);
-  });
+  }
 
   gamesGrid.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('game-card')) {
@@ -2295,6 +2293,32 @@ function setupEventListeners() {
     });
   }
 
+  // Confirm Dialog actions (audit F10.3)
+  if (confirmModalEl) {
+    const confirmOkBtn = document.getElementById('confirm-ok-btn');
+    const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+
+    if (confirmOkBtn) {
+      confirmOkBtn.addEventListener('click', () => {
+        closeModal(confirmModalEl);
+        resolveConfirm(true);
+      });
+    }
+    if (confirmCancelBtn) {
+      confirmCancelBtn.addEventListener('click', () => {
+        closeModal(confirmModalEl);
+        resolveConfirm(false);
+      });
+    }
+    // Click on the dimmed backdrop cancels, matching the other modals
+    confirmModalEl.addEventListener('click', (e) => {
+      if (e.target === confirmModalEl) {
+        closeModal(confirmModalEl);
+        resolveConfirm(false);
+      }
+    });
+  }
+
   // Edit Game Search Artwork trigger
   if (editSearchBtn && editSearchInput) {
     editSearchBtn.addEventListener('click', async (e) => {
@@ -2327,8 +2351,8 @@ function setupEventListeners() {
           const div = document.createElement('div');
           div.className = 'search-result-item';
           div.innerHTML = `
-            <img class="search-result-img" src="${item.tiny_image}" alt="${item.name}">
-            <span class="search-result-name">${item.name}</span>
+            <img class="search-result-img" src="${safeArtUrl(item.tiny_image)}" alt="${escapeHtml(item.name)}">
+            <span class="search-result-name">${escapeHtml(item.name)}</span>
           `;
           div.addEventListener('click', () => {
             const coverInput = document.getElementById('edit-game-cover');
@@ -2382,33 +2406,20 @@ function setupEventListeners() {
         game.rtime_last_played = Math.floor(new Date(newLastPlayedDate).getTime() / 1000);
       }
 
+      // A rename/re-platform can create a duplicate with an existing entry —
+      // dedupe at this mutation point (render no longer dedupes; audit F10.1)
+      appState.games = deduplicateGamesList(appState.games, false);
+
       saveSettingsToStorage();
 
       // Cloud DB Sync
-      if (appState.supabaseConfig.enabled && supabaseClient) {
+      if (isCloudEnabled()) {
         try {
           if (origPlatform !== newPlatform) {
-            await supabaseClient
-              .from('games')
-              .delete()
-              .match({ platform: origPlatform, external_id: String(origExtId) });
+            await dbDeleteGames([{ platform: origPlatform, external_id: String(origExtId) }]);
           }
 
-          const row = {
-            external_id: String(game.external_id),
-            platform: game.platform,
-            title: game.name,
-            playtime_forever: game.playtime_forever,
-            last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-            cover_url: game.cover_url,
-            backdrop_url: game.backdrop_url
-          };
-
-          const { error } = await supabaseClient
-            .from('games')
-            .upsert(row, { onConflict: 'platform,external_id' });
-
-          if (error) throw error;
+          await dbUpsertGames([toDbRow(game)]);
           showToast(`Saved changes for "${game.name}" in database!`, 'success');
         } catch (err) {
           console.error(err);
@@ -2445,20 +2456,22 @@ function setupEventListeners() {
       const game = appState.games.find(g => g.platform === origPlatform && String(g.external_id) === String(origExtId));
       if (!game) return;
 
-      if (!confirm(`Are you sure you want to delete "${game.name}" from your library?`)) {
+      const okDelete = await showConfirm({
+        title: 'Delete game?',
+        message: `Are you sure you want to delete "${game.name}" from your library?`,
+        confirmLabel: 'Delete',
+        danger: true
+      });
+      if (!okDelete) {
         return;
       }
 
       appState.games = appState.games.filter(g => !(g.platform === origPlatform && String(g.external_id) === String(origExtId)));
       saveSettingsToStorage();
 
-      if (appState.supabaseConfig.enabled && supabaseClient) {
+      if (isCloudEnabled()) {
         try {
-          const { error } = await supabaseClient
-            .from('games')
-            .delete()
-            .match({ platform: origPlatform, external_id: String(origExtId) });
-          if (error) throw error;
+          await dbDeleteGames([{ platform: origPlatform, external_id: String(origExtId) }]);
           showToast(`Deleted "${game.name}" from cloud database!`, 'success');
         } catch (err) {
           console.error(err);
@@ -2529,7 +2542,24 @@ function setupEventListeners() {
             throw new Error('Invalid backup file: missing games list');
           }
 
-          const confirmRestore = confirm(`Are you sure you want to restore ${parsed.games.length} games and settings from this backup? This will overwrite your current database library.`);
+          // Validate every game object before it can reach state or the DB —
+          // a malicious backup file is otherwise a persistence-XSS vector (audit F2).
+          const sanitizedGames = parsed.games.map(sanitizeGame).filter(Boolean);
+          const skippedCount = parsed.games.length - sanitizedGames.length;
+          if (sanitizedGames.length === 0) {
+            throw new Error('Invalid backup file: no usable game entries found');
+          }
+
+          const confirmMsg = skippedCount > 0
+            ? `Found ${sanitizedGames.length} valid games (${skippedCount} invalid entries will be skipped). Restore this backup? This will overwrite your current database library.`
+            : `Are you sure you want to restore ${sanitizedGames.length} games and settings from this backup? This will overwrite your current database library.`;
+          const confirmRestore = await showConfirm({
+            title: 'Restore backup?',
+            message: confirmMsg,
+            confirmLabel: 'Overwrite & Restore',
+            cancelLabel: 'Cancel',
+            danger: true
+          });
           if (!confirmRestore) {
             backupFileInput.value = '';
             return;
@@ -2538,7 +2568,7 @@ function setupEventListeners() {
           showToast('Restoring backup to Supabase...', 'info');
 
           // Update appState
-          appState.games = parsed.games;
+          appState.games = deduplicateGamesList(sanitizedGames, false);
           appState.steamId = parsed.steamId || '';
           appState.vanityUrl = parsed.vanityUrl || '';
           appState.gogUsername = parsed.gogUsername || '';
@@ -2560,7 +2590,9 @@ function setupEventListeners() {
           updateStats();
           updateStageBackground();
           
-          showToast('Library and settings restored successfully from backup!', 'success');
+          showToast(skippedCount > 0
+            ? `Library restored: ${appState.games.length} games imported, ${skippedCount} invalid entries skipped.`
+            : 'Library and settings restored successfully from backup!', 'success');
         } catch (err) {
           console.error(err);
           showToast(`Restore failed: ${err.message}`, 'error');
@@ -2572,25 +2604,20 @@ function setupEventListeners() {
   }
 }
 
-// Initialize Supabase Connection using credentials fetched from backend env
+// Initialize cloud-sync state from the backend (booleans only — the browser
+// never receives Supabase credentials; audit B1-A)
 async function initializeSupabase() {
   try {
     const res = await fetch('/api/config/status');
     if (!res.ok) throw new Error('Failed to fetch config status');
     const data = await res.json();
-    
-    if (data.supabaseConfigured && data.supabaseUrl && data.supabaseAnonKey) {
-      appState.supabaseConfig = {
-        enabled: true,
-        url: data.supabaseUrl,
-        anonKey: data.supabaseAnonKey
-      };
-      supabaseClient = supabase.createClient(data.supabaseUrl, data.supabaseAnonKey);
-      updateConnectionStatusUI();
-    } else {
-      appState.supabaseConfig.enabled = false;
-      updateConnectionStatusUI();
-    }
+
+    appState.supabaseConfig = {
+      enabled: !!data.supabaseConfigured,
+      url: '',
+      anonKey: ''
+    };
+    updateConnectionStatusUI();
   } catch (err) {
     console.error('Failed to initialize Supabase Client:', err);
     appState.supabaseConfig.enabled = false;
@@ -2600,19 +2627,11 @@ async function initializeSupabase() {
 
 // Fetch app settings from Supabase
 async function fetchSettingsFromSupabase() {
-  if (!supabaseClient) return;
+  if (!isCloudEnabled()) return;
   
   try {
-    const { data, error } = await supabaseClient
-      .from('settings')
-      .select('*')
-      .eq('id', 1)
-      .maybeSingle();
-      
-    if (error) {
-      throw error;
-    }
-    
+    const payload = await dbRequest('/api/db/settings');
+    const data = payload.settings; // DB row or null
     if (data) {
       appState.steamId = data.steam_id || '';
       appState.vanityUrl = data.vanity_url || '';
@@ -2679,7 +2698,7 @@ async function fetchSettingsFromSupabase() {
 
 // Update Database Connection status text and dots
 function updateConnectionStatusUI() {
-  if (appState.supabaseConfig.enabled && supabaseClient) {
+  if (isCloudEnabled()) {
     connectionStatus.classList.remove('offline');
     connectionStatus.classList.add('online');
     connectionText.textContent = 'Supabase Connected';
@@ -2756,17 +2775,13 @@ async function checkIgdbStatus() {
   }
 }
 
-// Fetch Games from Supabase
+// Fetch Games from Supabase (via backend proxy)
 async function fetchGamesFromSupabase() {
-  if (!supabaseClient) return;
+  if (!isCloudEnabled()) return;
   
   try {
-    const { data, error } = await supabaseClient
-      .from('games')
-      .select('*')
-      .order('playtime_forever', { ascending: false });
-      
-    if (error) throw error;
+    const payload = await dbRequest('/api/db/games');
+    const data = payload.games;
     
     if (data && data.length > 0) {
       const parsedGames = data.map(item => ({
@@ -2816,16 +2831,10 @@ async function verifyAndFixSteamBackdrops(gamesToVerify) {
             if (data.backdrop_url && await isImageValid(data.backdrop_url)) {
               game.backdrop_url = data.backdrop_url;
               fixedCount++;
-              if (appState.supabaseConfig.enabled && supabaseClient) {
-                await supabaseClient.from('games').upsert({
-                  external_id: String(game.external_id),
-                  platform: game.platform,
-                  title: game.name,
-                  playtime_forever: game.playtime_forever,
-                  last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-                  cover_url: game.cover_url,
-                  backdrop_url: game.backdrop_url
-                }, { onConflict: 'platform,external_id' });
+              if (isCloudEnabled()) {
+                if (isCloudEnabled()) {
+                  await dbUpsertGames([toDbRow(game)]);
+                }
               }
             }
           }
@@ -2891,10 +2900,12 @@ async function syncSteamLibraryCore() {
       ...appState.games.filter(g => g.platform !== 'Steam'),
       ...newSteamGames
     ];
+    // Dedupe at mutation time so renderGames doesn't have to on every keystroke (audit F10.1)
+    appState.games = deduplicateGamesList(appState.games, false);
 
     saveSettingsToStorage();
     
-    if (appState.supabaseConfig.enabled && supabaseClient) {
+    if (isCloudEnabled()) {
       showToast('Syncing Steam library with Supabase...', 'info');
       await syncGamesToSupabase(appState.games);
     }
@@ -2927,6 +2938,9 @@ async function syncGogLibraryCore() {
     }
     
     const gogGames = data.games;
+    if (data.truncated) {
+      showToast(`GOG library is very large — only the first ${gogGames.length} games were synced (server page limit).`, 'warning');
+    }
     
     // Check existing GOG games in appState to preserve already-upgraded artwork
     const existingGogMap = new Map();
@@ -2982,10 +2996,12 @@ async function syncGogLibraryCore() {
       ...appState.games.filter(g => g.platform !== 'GOG'),
       ...newGogGames
     ];
+    // Dedupe at mutation time so renderGames doesn't have to on every keystroke (audit F10.1)
+    appState.games = deduplicateGamesList(appState.games, false);
 
     saveSettingsToStorage();
     
-    if (appState.supabaseConfig.enabled && supabaseClient) {
+    if (isCloudEnabled()) {
       showToast('Syncing GOG library with Supabase...', 'info');
       await syncGamesToSupabase(appState.games);
     }
@@ -3024,6 +3040,9 @@ async function syncStoveLibraryCore() {
     });
 
     const stoveGames = data.games;
+    if (data.truncated) {
+      showToast(`STOVE library is very large — only the first ${stoveGames.length} games were synced (server page limit).`, 'warning');
+    }
     const newStoveGames = stoveGames
       .filter(game => !shouldExcludeGame(game.name, game.appid))
       .map(game => {
@@ -3072,10 +3091,12 @@ async function syncStoveLibraryCore() {
       ...appState.games.filter(g => g.platform !== 'Stove'),
       ...newStoveGames
     ];
+    // Dedupe at mutation time so renderGames doesn't have to on every keystroke (audit F10.1)
+    appState.games = deduplicateGamesList(appState.games, false);
 
     saveSettingsToStorage();
 
-    if (appState.supabaseConfig.enabled && supabaseClient) {
+    if (isCloudEnabled()) {
       showToast('Syncing STOVE library with Supabase...', 'info');
       await syncGamesToSupabase(appState.games);
     }
@@ -3198,7 +3219,7 @@ async function syncItchLibraryCore() {
     const cleanItchList = deduplicateGamesList(newItchGames, false);
 
     // Delete any old manual_... rows from Supabase so they don't linger in DB
-    if (supabaseClient) {
+    if (isCloudEnabled()) {
       const oldManualIds = existingItchGames
         .filter(g => String(g.external_id || '').startsWith('manual_'))
         .map(g => String(g.external_id));
@@ -3206,11 +3227,7 @@ async function syncItchLibraryCore() {
       if (oldManualIds.length > 0) {
         console.log('[CrossPlay Itch Sync] Deleting obsolete manual entries from Supabase:', oldManualIds);
         try {
-          await supabaseClient
-            .from('games')
-            .delete()
-            .ilike('platform', 'Itch.io')
-            .in('external_id', oldManualIds);
+          await dbDeleteGamesByPlatformIds('Itch.io', oldManualIds);
         } catch (err) {
           console.warn('Failed to delete obsolete manual rows from Supabase:', err);
         }
@@ -3228,7 +3245,7 @@ async function syncItchLibraryCore() {
 
     saveSettingsToStorage();
 
-    if (appState.supabaseConfig.enabled && supabaseClient) {
+    if (isCloudEnabled()) {
       showToast('Syncing Itch.io library with Supabase...', 'info');
       await syncGamesToSupabase(appState.games);
     }
@@ -3280,69 +3297,67 @@ async function triggerSync(platforms) {
     return;
   }
 
+  if (syncInProgress) {
+    showToast(SYNC_BUSY_MESSAGE, 'info');
+    return;
+  }
+  syncInProgress = true;
+
   // Visual feedback on the merged button
-  if (syncAllBtn) {
-    syncAllBtn.disabled = true;
-    syncAllBtn.classList.add('is-syncing');
-  }
-  if (syncDropdownToggle) syncDropdownToggle.disabled = true;
-  if (syncAllIcon) syncAllIcon.classList.add('syncing-rotate');
-  loadingText.textContent = `Syncing ${platforms.join(' & ')} Library...`;
-  loadingSpinner.setAttribute('aria-busy', 'true');
-  loadingSpinner.classList.remove('hidden');
-  gamesGrid.setAttribute('aria-busy', 'true');
-  gamesGrid.classList.add('hidden');
-  emptyState.classList.add('hidden');
+  try {
+    if (syncAllBtn) {
+      syncAllBtn.disabled = true;
+      syncAllBtn.classList.add('is-syncing');
+    }
+    if (syncDropdownToggle) syncDropdownToggle.disabled = true;
+    if (syncAllIcon) syncAllIcon.classList.add('syncing-rotate');
+    loadingText.textContent = `Syncing ${platforms.join(' & ')} Library...`;
+    loadingSpinner.setAttribute('aria-busy', 'true');
+    loadingSpinner.classList.remove('hidden');
+    gamesGrid.setAttribute('aria-busy', 'true');
+    gamesGrid.classList.add('hidden');
+    emptyState.classList.add('hidden');
 
-  const tasks = [];
-  if (platforms.includes('Steam') && appState.steamId) tasks.push(syncSteamLibraryCore());
-  if (platforms.includes('GOG') && appState.gogUsername) tasks.push(syncGogLibraryCore());
-  if (platforms.includes('Stove') && appState.stoveMemberNo) tasks.push(syncStoveLibraryCore());
-  if (platforms.includes('Itch') && appState.itchCollectionUrl) tasks.push(syncItchLibraryCore());
+    const tasks = [];
+    if (platforms.includes('Steam') && appState.steamId) tasks.push(syncSteamLibraryCore());
+    if (platforms.includes('GOG') && appState.gogUsername) tasks.push(syncGogLibraryCore());
+    if (platforms.includes('Stove') && appState.stoveMemberNo) tasks.push(syncStoveLibraryCore());
+    if (platforms.includes('Itch') && appState.itchCollectionUrl) tasks.push(syncItchLibraryCore());
 
-  await Promise.allSettled(tasks);
+    await Promise.allSettled(tasks);
+  } finally {
+    syncInProgress = false;
 
-  loadingSpinner.setAttribute('aria-busy', 'false');
-  loadingSpinner.classList.add('hidden');
-  gamesGrid.removeAttribute('aria-busy');
-  gamesGrid.classList.remove('hidden');
-  if (syncAllBtn) {
-    syncAllBtn.disabled = false;
-    syncAllBtn.classList.remove('is-syncing');
-    syncAllBtn.classList.add('sync-success');
-    setTimeout(() => {
-      syncAllBtn.classList.remove('sync-success');
-    }, 1800);
-  }
-  if (syncDropdownToggle) syncDropdownToggle.disabled = false;
-  if (syncAllIcon) syncAllIcon.classList.remove('syncing-rotate');
+    loadingSpinner.setAttribute('aria-busy', 'false');
+    loadingSpinner.classList.add('hidden');
+    gamesGrid.removeAttribute('aria-busy');
+    gamesGrid.classList.remove('hidden');
+    if (syncAllBtn) {
+      syncAllBtn.disabled = false;
+      syncAllBtn.classList.remove('is-syncing');
+      syncAllBtn.classList.add('sync-success');
+      setTimeout(() => {
+        syncAllBtn.classList.remove('sync-success');
+      }, 1800);
+    }
+    if (syncDropdownToggle) syncDropdownToggle.disabled = false;
+    if (syncAllIcon) syncAllIcon.classList.remove('syncing-rotate');
 
-  if (appState.games.length === 0) {
-    emptyState.classList.remove('hidden');
+    if (appState.games.length === 0) {
+      emptyState.classList.remove('hidden');
+    }
   }
 }
 
-// Push local games to Supabase using unified structure
+// Push local games to Supabase using unified structure (via backend proxy)
 async function syncGamesToSupabase(gamesList) {
-  if (!supabaseClient) return;
+  if (!isCloudEnabled()) return;
 
   try {
     const deduplicated = deduplicateGamesList(gamesList, false);
-    const rows = deduplicated.map(game => ({
-      external_id: String(game.external_id),
-      platform: game.platform,
-      title: game.name,
-      playtime_forever: game.playtime_forever || 0,
-      last_played: game.rtime_last_played ? new Date(game.rtime_last_played * 1000).toISOString() : null,
-      cover_url: game.cover_url || null,
-      backdrop_url: game.backdrop_url || null
-    }));
+    const rows = deduplicated.map(toDbRow);
 
-    const { error } = await supabaseClient
-      .from('games')
-      .upsert(rows, { onConflict: 'platform,external_id' });
-
-    if (error) throw error;
+    await dbUpsertGames(rows);
     showToast('Supabase database sync completed!', 'success');
   } catch (err) {
     console.error('Supabase Sync error:', err);
@@ -3392,14 +3407,15 @@ function getPlatformBadgeHtml(platform) {
     </svg>`;
   }
   
-  return `<span class="card-badge platform-badge ${platformClass}" title="${platform}">
+  return `<span class="card-badge platform-badge ${platformClass}" title="${escapeHtml(platform || '')}">
     ${iconHtml}
   </span>`;
 }
 
 // Render Games Grid
+// NOTE: deduplication intentionally happens at mutation points (sync/import/
+// restore), not on every keystroke-driven render — audit F10.1.
 function renderGames(shouldUpdateStats = true) {
-  appState.games = deduplicateGamesList(appState.games, false);
 
   if (shouldUpdateStats) {
     updateStats();
@@ -3507,26 +3523,26 @@ function renderGames(shouldUpdateStats = true) {
       <div class="game-cover-container">
         <div class="card-glare" aria-hidden="true"></div>
         ${platformBadgeHtml}
-        <button class="edit-cover-btn" type="button" title="Edit Cover Art" aria-label="Edit ${game.name}" data-platform="${game.platform}" data-external-id="${game.external_id}">
+        <button class="edit-cover-btn" type="button" title="Edit Cover Art" aria-label="Edit ${escapeHtml(game.name)}" data-platform="${escapeHtml(game.platform)}" data-external-id="${escapeHtml(game.external_id)}">
           <i data-lucide="edit-3" aria-hidden="true"></i>
         </button>
-        <button class="delete-game-btn" type="button" title="Delete & Ignore Game" aria-label="Delete ${game.name}" data-platform="${game.platform}" data-external-id="${game.external_id}" data-name="${game.name.replace(/"/g, '&quot;')}">
+        <button class="delete-game-btn" type="button" title="Delete & Ignore Game" aria-label="Delete ${escapeHtml(game.name)}" data-platform="${escapeHtml(game.platform)}" data-external-id="${escapeHtml(game.external_id)}" data-name="${escapeHtml(game.name)}">
           <i data-lucide="trash-2" aria-hidden="true"></i>
         </button>
         ${coverPath ? 
           `<img class="game-cover" 
-                src="${coverPath}" 
-                alt="${game.name}" 
+                src="${safeArtUrl(coverPath)}" 
+                alt="${escapeHtml(game.name)}" 
                 loading="lazy">`
           :
-          `<div class="cover-placeholder ${game.platform.toLowerCase()}">
+          `<div class="cover-placeholder ${escapeHtml(game.platform.toLowerCase())}">
              <i data-lucide="gamepad" class="placeholder-icon"></i>
-             <div class="placeholder-title">${game.name}</div>
+             <div class="placeholder-title">${escapeHtml(game.name)}</div>
            </div>`
         }
       </div>
       <div class="game-card-info">
-        <h4 class="game-title" title="${game.name}">${game.name}</h4>
+        <h4 class="game-title" title="${escapeHtml(game.name)}">${escapeHtml(game.name)}</h4>
         <div class="game-meta">
           <span class="meta-item last-played" title="Last Played: ${lastPlayedText}">
             <i data-lucide="calendar"></i>
@@ -3556,10 +3572,10 @@ function renderGames(shouldUpdateStats = true) {
 // Helper to replace image element with cover placeholder without wiping other components
 function replaceImageWithPlaceholder(imgElement, platform, name) {
   const placeholder = document.createElement('div');
-  placeholder.className = `cover-placeholder ${platform.toLowerCase()}`;
+  placeholder.className = `cover-placeholder ${escapeHtml(String(platform).toLowerCase())}`;
   placeholder.innerHTML = `
     <i data-lucide="gamepad" class="placeholder-icon"></i>
-    <div class="placeholder-title">${name}</div>
+    <div class="placeholder-title">${escapeHtml(name)}</div>
   `;
   imgElement.replaceWith(placeholder);
   lucide.createIcons();
@@ -3756,7 +3772,10 @@ function trapFocus(e) {
 function handleModalEscape(e) {
   if (e.key === 'Escape' && activeModal) {
     e.preventDefault();
-    if (activeModal === addGameModal) closeAddGame();
+    if (activeModal === confirmModalEl) {
+      closeModal(activeModal);
+      resolveConfirm(false);
+    } else if (activeModal === addGameModal) closeAddGame();
     else if (activeModal === document.getElementById('edit-game-modal')) closeEditGameModal();
   }
 }
@@ -3782,6 +3801,52 @@ function closeModal(modal) {
     lastFocusedElement.focus();
   }
   lastFocusedElement = null;
+}
+
+// ---------------------------------------------------------------------------
+// Custom confirm dialog replacing native confirm() (audit F10.3).
+// Returns a Promise<boolean>. Non-blocking, matches the app's modal styling,
+// and reuses the shared focus-trap/Escape infrastructure via openModal().
+// ---------------------------------------------------------------------------
+let confirmResolver = null;
+
+function resolveConfirm(result) {
+  if (typeof confirmResolver === 'function') {
+    const resolver = confirmResolver;
+    confirmResolver = null;
+    resolver(result);
+  }
+}
+
+function showConfirm({ title = 'Are you sure?', message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true } = {}) {
+  return new Promise((resolve) => {
+    const modal = confirmModalEl || document.getElementById('confirm-modal');
+    // Fallback to native confirm() if the dialog markup is unavailable
+    if (!modal) {
+      resolve(window.confirm(message));
+      return;
+    }
+    // Never leave a stale resolver pending if dialogs somehow stack
+    if (confirmResolver) resolveConfirm(false);
+
+    const titleText = document.getElementById('confirm-modal-title-text');
+    const messageEl = document.getElementById('confirm-modal-message');
+    const okBtn = document.getElementById('confirm-ok-btn');
+    const cancelBtn = document.getElementById('confirm-cancel-btn');
+
+    if (titleText) titleText.textContent = title;
+    if (messageEl) messageEl.textContent = message; // textContent — XSS-safe
+    okBtn.textContent = confirmLabel;
+    okBtn.classList.toggle('btn-danger', danger);
+    okBtn.classList.toggle('btn-primary', !danger);
+    cancelBtn.textContent = cancelLabel;
+
+    confirmResolver = resolve;
+    openModal(modal);
+
+    // Focus Cancel (not OK) so a stray Enter can't confirm a destructive action
+    requestAnimationFrame(() => cancelBtn.focus());
+  });
 }
 
 function openAddGame() {
@@ -3821,7 +3886,7 @@ function showToast(message, type = 'info') {
   
   toast.innerHTML = `
     <i data-lucide="${icon}"></i>
-    <span>${message}</span>
+    <span>${escapeHtml(message)}</span>
   `;
   
   container.appendChild(toast);
@@ -3850,7 +3915,7 @@ function openEditGameSidebar(platform, externalId) {
   const backdropInput = document.getElementById('edit-game-backdrop');
   const playtimeInput = document.getElementById('edit-game-playtime');
   const lastPlayedInput = document.getElementById('edit-game-lastplayed');
-  const searchInput = document.getElementById('edit-search-input');
+  const editSearchBox = document.getElementById('edit-search-input');
   const searchResults = document.getElementById('edit-search-results');
 
   // Preview elements
@@ -3876,7 +3941,7 @@ function openEditGameSidebar(platform, externalId) {
     lastPlayedInput.value = '';
   }
 
-  searchInput.value = game.name;
+  editSearchBox.value = game.name;
   searchResults.innerHTML = '';
   searchResults.classList.add('hidden');
 
@@ -3890,11 +3955,14 @@ function openEditGameSidebar(platform, externalId) {
     prevImg.src = coverUrl || NO_COVER_PLACEHOLDER;
     
     const backdropUrl = backdropInput.value.trim();
-    if (backdropUrl) {
-      prevBackdrop.style.backgroundImage = `url("${backdropUrl}")`;
+    // Guard against CSS injection via url("...") breakout (audit F1):
+    // only http(s) URLs, with quotes/backslashes stripped.
+    if (backdropUrl && isValidHttpUrl(backdropUrl)) {
+      prevBackdrop.style.backgroundImage = `url("${backdropUrl.replace(/["\\]/g, '')}")`;
       prevBackdrop.style.display = 'block';
     } else {
       prevBackdrop.style.backgroundImage = 'none';
+      prevBackdrop.style.display = 'none';
     }
     lucide.createIcons();
   }
@@ -3960,7 +4028,13 @@ function shouldExcludeGame(title, appid) {
 
 // Delete game from library and add to blacklist
 async function deleteAndIgnoreGame(platform, externalId, name) {
-  if (!confirm(`Are you sure you want to delete and ignore "${name}"? It will be removed and never imported again.`)) {
+  const okIgnore = await showConfirm({
+    title: 'Delete & ignore?',
+    message: `Are you sure you want to delete and ignore "${name}"? It will be removed and never imported again.`,
+    confirmLabel: 'Delete & Ignore',
+    danger: true
+  });
+  if (!okIgnore) {
     return;
   }
 
@@ -3983,16 +4057,11 @@ async function deleteAndIgnoreGame(platform, externalId, name) {
   // Save changes
   saveSettingsToStorage();
 
-  // If Supabase is connected, sync the updated list
-  if (appState.supabaseConfig.enabled && supabaseClient) {
+  // If cloud sync is enabled, remove the game row via the backend proxy
+  if (isCloudEnabled()) {
     try {
       showToast('Updating cloud database...', 'info');
-      const { error } = await supabaseClient
-        .from('games')
-        .delete()
-        .match({ platform, external_id: String(externalId) });
-        
-      if (error) throw error;
+      await dbDeleteGames([{ platform, external_id: String(externalId) }]);
       showToast(`Deleted ${name} from cloud database!`, 'success');
     } catch (e) {
       console.error(e);

@@ -10,10 +10,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
-  <script defer src="https://unpkg.com/lucide@latest"></script>
-  <!-- Supabase JS Client CDN -->
-  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="style.css?v=4.0">
+  <!-- Pinned CDN dependencies with SRI hashes (audit F4). When upgrading:
+       1. bump the version in both the URL and any docs
+       2. recompute integrity via: curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+       (supabase-js was removed — all DB access is proxied through /api/db/*, audit B1-A) -->
+  <script defer src="https://unpkg.com/lucide@1.33.0/dist/umd/lucide.min.js"
+          integrity="sha384-tCQ4YYVYKuOFYH+pnSIPOS3PaT3+5AmX2okMauzDJlLLxkQfJfSwmgpZPceZWs1F"
+          crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="style.css?v=4.1">
 </head>
 <body>
   <!-- App Preloader / Exciting Loading Screen -->
@@ -188,6 +192,7 @@
             <option value="name-desc">Alphabetical (Z-A)</option>
           </select>
         </div>
+      </div>
       </section>
 
       <!-- Games Grid -->
@@ -208,9 +213,6 @@
 
         <div id="games-grid" class="games-grid"></div>
       </section>
-      </section>
-
-      </div>
 
       <!-- Settings Page -->
       <div id="settings-view" class="settings-page hidden">
@@ -740,6 +742,22 @@
     </div>
   </div>
 
-  <script src="app.js?v=2.9"></script>
+  <!-- Confirm Dialog — custom replacement for native confirm() (audit F10.3) -->
+  <div class="modal-overlay confirm-modal" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+    <div class="settings-panel confirm-panel" role="document">
+      <div class="settings-header">
+        <h2 id="confirm-modal-title"><i data-lucide="alert-triangle" class="settings-title-icon confirm-icon"></i> <span id="confirm-modal-title-text">Are you sure?</span></h2>
+      </div>
+      <div class="settings-body">
+        <p id="confirm-modal-message" class="confirm-message"></p>
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-secondary" id="confirm-cancel-btn">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirm-ok-btn">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=2.12"></script>
 </body>
 </html>

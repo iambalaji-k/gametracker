@@ -1865,7 +1865,10 @@ body {
 }
 
 .form-group input[type="text"],
-.form-group input[type="password"] {
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group input {
   width: 100%;
   padding: 0.75rem 1rem;
   background-color: var(--bg-primary);
@@ -1875,6 +1878,10 @@ body {
   font-family: inherit;
   font-size: 0.9rem;
   transition: var(--transition-smooth);
+}
+
+.form-group input[type="date"] {
+  color-scheme: dark;
 }
 
 .form-group input:focus {
@@ -3469,4 +3476,74 @@ select.styled-select {
   0% { transform: translateX(-100%); width: 25%; }
   50% { width: 65%; }
   100% { transform: translateX(250%); width: 35%; }
+}
+
+/* ---------------------------------------------------------------------------
+   Confirm Dialog (audit F10.3) — custom replacement for native confirm().
+   Reuses .modal-overlay / .settings-panel, but centers a compact panel
+   instead of the full-height right-side drawer.
+--------------------------------------------------------------------------- */
+.confirm-modal {
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem;
+}
+
+.confirm-panel {
+  width: auto;
+  max-width: 440px;
+  height: auto;
+  max-height: none;
+  border: 1px solid var(--border-glass);
+  border-radius: 16px;
+  padding: 1.75rem 1.75rem 1.5rem;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+  transform: translate3d(0, 12px, 0) scale(0.96);
+}
+
+.modal-overlay.open .confirm-panel {
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.confirm-modal .settings-header {
+  margin-bottom: 1rem;
+}
+
+.confirm-modal .settings-header h2 {
+  font-size: 1.2rem;
+}
+
+.confirm-icon {
+  color: var(--color-danger);
+}
+
+.confirm-message {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, var(--color-danger) 0%, hsl(0, 72%, 48%) 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 15px hsla(0, 85%, 60%, 0.35);
+}
+
+.btn-danger:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px hsla(0, 85%, 60%, 0.45);
+}
+
+.btn-danger:active {
+  transform: translateY(0) scale(0.98);
 }
