@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
   gog_username TEXT,
   epic_connected BOOLEAN DEFAULT false,
   legacy_connected BOOLEAN DEFAULT false,
+  indiegala_connected BOOLEAN DEFAULT false,
   stove_member_no TEXT,
   itch_collection_url TEXT,
   blacklist_app_ids JSONB DEFAULT '[]'::jsonb,
@@ -41,3 +42,4 @@ ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 -- Migration alters (safe to run on existing databases to add missing columns)
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS stove_member_no TEXT;
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS itch_collection_url TEXT;
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS indiegala_connected BOOLEAN DEFAULT false;

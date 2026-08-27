@@ -36,6 +36,10 @@
   --platform-microsoft-bg: rgba(10, 26, 44, 0.75);
   --platform-itch: #fa5c5c;
   --platform-itch-bg: rgba(45, 20, 25, 0.75);
+  --platform-ubisoft: #009eff;
+  --platform-ubisoft-bg: rgba(0, 112, 255, 0.15);
+  --platform-indiegala: #f02c34;
+  --platform-indiegala-bg: rgba(229, 27, 36, 0.15);
   --platform-other: #a0aec0;
   --platform-other-bg: rgba(45, 55, 72, 0.75);
   
@@ -1573,6 +1577,28 @@ body {
 .card-badge.platform-badge.itch:hover {
   border-color: rgba(250, 92, 92, 0.6);
   background: rgba(45, 20, 25, 0.95);
+  transform: scale(1.05);
+}
+
+.card-badge.platform-badge.ubisoft {
+  border-color: rgba(0, 158, 255, 0.3);
+  color: #009eff;
+  background: rgba(0, 40, 85, 0.85);
+}
+.card-badge.platform-badge.ubisoft:hover {
+  border-color: rgba(0, 158, 255, 0.65);
+  background: rgba(0, 60, 130, 0.95);
+  transform: scale(1.05);
+}
+
+.card-badge.platform-badge.indiegala {
+  border-color: rgba(240, 44, 52, 0.3);
+  color: #f02c34;
+  background: rgba(55, 10, 15, 0.85);
+}
+.card-badge.platform-badge.indiegala:hover {
+  border-color: rgba(240, 44, 52, 0.65);
+  background: rgba(80, 15, 20, 0.95);
   transform: scale(1.05);
 }
 
@@ -3244,6 +3270,12 @@ select.styled-select {
 .btn-legacy { width: 100%; background-color: rgba(246, 173, 85, 0.08); border-color: rgba(246, 173, 85, 0.25); color: var(--platform-legacy); }
 .avatar-legacy { background-color: rgba(246, 173, 85, 0.1); border-color: rgba(246, 173, 85, 0.3); color: var(--platform-legacy); }
 .badge-legacy { background-color: rgba(246, 173, 85, 0.15); color: var(--platform-legacy); border-color: rgba(246, 173, 85, 0.2); }
+.accent-indiegala { color: var(--platform-indiegala); }
+.btn-indiegala { width: 100%; background-color: rgba(240, 44, 52, 0.08); border-color: rgba(240, 44, 52, 0.25); color: var(--platform-indiegala); }
+.avatar-indiegala { background-color: rgba(240, 44, 52, 0.1); border-color: rgba(240, 44, 52, 0.3); color: var(--platform-indiegala); }
+.avatar-indiegala-sm { background-color: rgba(240, 44, 52, 0.1); border-color: rgba(240, 44, 52, 0.3); color: var(--platform-indiegala); }
+.badge-indiegala { background-color: rgba(240, 44, 52, 0.15); color: var(--platform-indiegala); border-color: rgba(240, 44, 52, 0.2); }
+.link-indiegala { color: var(--platform-indiegala); text-decoration: underline; }
 .avatar-supabase { background-color: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); color: #3b82f6; }
 .avatar-igdb { background-color: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); color: #a78bfa; }
 .help-block { margin-bottom: 1rem; padding: 0.85rem; font-size: 0.8rem; }

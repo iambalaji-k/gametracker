@@ -16,14 +16,14 @@ This repository is configured for a **fully online, single-user deployment** usi
   - **GOG Sync**: Import GOG games using your GOG username.
   - **Smilegate STOVE Sync**: Import games directly using your STOVE Member Number or Profile URL.
   - **Itch.io Collection Sync**: Import and synchronize collections directly using public Itch collection URLs.
-  - **Epic & Legacy Games Extractor**: Easy-to-use console scripts to scrape and import purchases directly.
+  - **Epic, Legacy & IndieGala Extractor**: Easy-to-use console scripts to scrape and import purchases and showcase collections directly.
   - **Supabase Cloud Sync**: Sync settings (Steam/GOG profiles, blacklists) and your game collection to a Postgres cloud database.
 - 📝 **Edit Game Sidebar**: Full-featured slide-over drawer (using the sleek settings-panel design system) to edit game titles, platforms, playtimes, last played dates, vertical covers, and hero backdrops with live artwork previews and quick blacklist/delete controls.
-- 🎨 **Smart Cover Art Standardization**: Automatic resolution and preservation of high-definition 600x900 vertical poster art (2:3 aspect ratio) and landscape hero banners across all platforms (Steam, GOG, Epic, Itch.io, STOVE).
-- 📊 **Dynamic Store-Filtered Hero Stats**: The hero section stats pill (Total Games and Playtime) dynamically updates based on the selected store/platform filter tab (Steam, GOG, Epic, Luna, Itch.io, STOVE, etc.) while remaining unaffected by text search queries.
+- 🎨 **Smart Cover Art Standardization**: Automatic resolution and preservation of high-definition 600x900 vertical poster art (2:3 aspect ratio) and landscape hero banners across all platforms (Steam, GOG, Epic, Itch.io, STOVE, Ubisoft, IndieGala).
+- 📊 **Dynamic Store-Filtered Hero Stats**: The hero section stats pill (Total Games and Playtime) dynamically updates based on the selected store/platform filter tab (Steam, GOG, Epic, Luna, Microsoft Store, Itch.io, STOVE, Ubisoft, IndieGala, etc.) while remaining unaffected by text search queries.
 - 🔤 **Steam-Style Alphabetical Sorting**: Sorting alphabetically (A-Z / Z-A) ignores leading English articles (*"The"*, *"A"*, *"An"*) and applies natural numeric ordering, matching Steam library organization.
-- 🔍 **Search & Filters**: Fast search matching along with tabbed platform filters (Steam, GOG, Epic, Legacy, Luna, Microsoft Store, Itch.io, Stove, Other) and multiple sorting combinations.
-- 🏷️ **Manual Entries**: Add custom games (e.g. Amazon Gaming, Microsoft Store, Custom platforms) and resolve cover art from IGDB or Steam.
+- 🔍 **Search & Filters**: Fast search matching along with tabbed platform filters (Steam, GOG, Epic, Legacy, Luna, Microsoft Store, Itch.io, Stove, Ubisoft, IndieGala, Other) and multiple sorting combinations.
+- 🏷️ **Manual Entries**: Add custom games (e.g. Ubisoft, IndieGala, Amazon Gaming, Microsoft Store, Custom platforms) and resolve cover art from IGDB or Steam.
 - 🎨 **Visual details**: Custom high-quality gamepad SVG favicon featuring the theme's Electric Violet to Cyber Cyan brand gradient, matching the app's dark-mode aesthetic.
 
 ---
@@ -33,27 +33,36 @@ This repository is configured for a **fully online, single-user deployment** usi
 ```
 ┌────────────────────────────────────────────────────────┐
 │                        BROWSER                         │
-├──────────────────────────┬─────────────────────────────┤
-│   Static Frontend UI     │   Supabase Client Library   │
-│   (HTML/CSS/JS Assets)   │   (Direct DB Read/Write)    │
-└────────────┬─────────────┴──────────────▲──────────────┘
-             │                            │
-      HTTP   │                            │  PostgreSQL Queries
-    Requests │                            │  (Anon Key)
-             ▼                            ▼
-┌──────────────────────────┐   ┌─────────────────────────┐
-│     VERCEL SERVERLESS    │   │        SUPABASE         │
-├──────────────────────────┤   ├─────────────────────────┤
-│    Express.js Server     │   │  Postgres Cloud DB      │
-│   • Steam API Resolvers  │   │  • 'games' Table        │
-│   • GOG Profile Scraper  │   │  • 'settings' Table     │
-│   • IGDB Metadata API    │   │                         │
-└──────────────────────────┘   └─────────────────────────┘
+├────────────────────────────────────────────────────────┤
+│   Static Frontend UI (HTML / CSS / Vanilla JS)         │
+│   • Glassmorphism Dark Theme & Animated Glider Filter  │
+│   • Local State & Resilient JSON Importers             │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                    HTTP   │  /api/games/*
+                  Requests │  /api/db/* (Secured Proxy)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│               EXPRESS BACKEND SERVER                   │
+├────────────────────────────────────────────────────────┤
+│   • Steam API Resolvers & IGDB Metadata Search         │
+│   • STOVE Scraper & Itch.io Crawler                    │
+│   • Supabase Database Proxy (Secured Service/Anon Key) │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                PostgreSQL │  REST API
+                   Queries │  (Row-Level Security)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│                  SUPABASE CLOUD DB                     │
+├────────────────────────────────────────────────────────┤
+│   • 'games' Table (Multi-platform synced libraries)    │
+│   • 'settings' Table (Single-user config & sync flags) │
+└────────────────────────────────────────────────────────┘
 ```
 
-- **Serverless Backend (Vercel)**: Serves static files and hosts API endpoints to interact with Steam, GOG, and Twitch/IGDB APIs using secret credentials kept hidden from the client browser.
-- **Client-Side Database Operations (Supabase)**: The frontend connects directly to Supabase using the Anon Key to fetch/save your library and settings.
-- **Zero LocalStorage reliance**: Settings, profiles, and blacklists are saved in a single-row `settings` table on Supabase, making the application fully cross-device sync-ready. An automatic migration moves existing `localStorage` data to Supabase on first startup.
+- **Backend Proxy Security**: The client browser never communicates directly with Supabase or exposes credentials. All database read/write queries route through `/api/db/*`.
+- **Zero LocalStorage Reliance for Cloud Users**: When Supabase is configured, games and settings are securely stored and synced to your cloud Postgres database. An automatic migration moves existing local storage data to Supabase on first startup.
 
 ---
 
@@ -129,10 +138,10 @@ You will need [Node.js](https://nodejs.org/) installed.
 - Copy your collection URL (e.g., `https://itch.io/c/1234567/my-collection`) and paste it in the Settings panel.
 - Click **Sync Itch.io** to fetch and catalog your collection with vertical 600x900 cover artwork.
 
-### Epic Games & Legacy Games
-1. Log into your account portal transactions page.
+### Epic Games, Legacy Games & IndieGala
+1. Log into your account portal transactions or library page.
 2. Open developer console (**F12**).
-3. Copy the scraper script from the CrossPlay settings panel, paste it into the console, and hit enter.
+3. Copy the extractor script from the CrossPlay settings panel (under Console Imports), paste it into the console, and press **Enter**.
 4. Copy the resulting JSON string and paste it into the import input area in CrossPlay settings to import your games.
 
 ---

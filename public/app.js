@@ -10,6 +10,7 @@ let appState = {
   itchCollectionUrl: '',
   epicConnected: false,
   legacyConnected: false,
+  indiegalaConnected: false,
   filters: 'all',
   searchQuery: '',
   sortKey: 'name-asc',
@@ -274,6 +275,98 @@ const LEGACY_EXTRACTOR_SCRIPT = `(async () => {
   }
 })();`;
 
+// IndieGala Extractor Script
+const INDIEGALA_EXTRACTOR_SCRIPT = `(async () => {
+  console.log("Extracting IndieGala Games... Please wait.");
+  const games = [];
+
+  const exclusions = [
+    "soundtrack", "dlc", "add-on", "content pack", "expansion", "wallpaper",
+    "artbook", "ost", "season pass", "bonus content", "trailer", "teaser",
+    "indiegala", "showcase", "my library", "home", "store", "giveaways", "trades"
+  ];
+
+  const isExcluded = (title) => {
+    if (!title || typeof title !== 'string') return true;
+    const lower = title.toLowerCase().trim();
+    if (lower.length < 2 || lower.length > 120) return true;
+    return exclusions.some(ex => lower === ex || lower.endsWith(\` \${ex}\`) || lower.includes(\`(\${ex})\`) || lower.includes(\`[\${ex}]\`));
+  };
+
+  const addGame = (rawTitle, rawId, dateStr, coverUrl) => {
+    if (!rawTitle) return;
+    const title = rawTitle.replace(/\\s+/g, ' ').trim();
+    if (isExcluded(title)) return;
+    if (!games.some(g => g.title.toLowerCase() === title.toLowerCase())) {
+      let dateVal = dateStr ? new Date(dateStr) : new Date();
+      if (isNaN(dateVal.getTime())) dateVal = new Date();
+      games.push({
+        title: title,
+        id: rawId ? String(rawId).trim() : title,
+        date: dateVal.toISOString(),
+        ...(coverUrl ? { cover_url: coverUrl } : {})
+      });
+    }
+  };
+
+  // 1. Scan IndieGala library & showcase item card elements
+  const cardSelectors = [
+    '.profile-private-page-library-sub-item',
+    '.profile-private-page-library-item',
+    '.profile-private-page-item',
+    '.profile-private-showcase-sub-item',
+    '.showcase-item',
+    '.my-library-item',
+    '.bundle-item',
+    '.lib-item',
+    'div[data-game-title]'
+  ];
+
+  document.querySelectorAll(cardSelectors.join(', ')).forEach(el => {
+    const titleEl = el.querySelector('.profile-private-page-library-title, .title, .game-title, .name, h3, h4, h5, [data-game-title]');
+    let title = titleEl ? (titleEl.getAttribute('data-game-title') || titleEl.textContent.trim()) : '';
+    if (!title && el.getAttribute('data-game-title')) {
+      title = el.getAttribute('data-game-title');
+    }
+    const imgEl = el.querySelector('img');
+    const coverUrl = imgEl ? (imgEl.src || imgEl.getAttribute('data-src') || '') : '';
+    const id = el.getAttribute('data-game-id') || el.getAttribute('data-id') || title;
+    if (title) {
+      addGame(title, id, null, coverUrl.startsWith('http') ? coverUrl : null);
+    }
+  });
+
+  // 2. Scan game links and headers inside showcase / library containers
+  document.querySelectorAll('.profile-private-page-library-title, a[href*="/game/"], a[href*="/store/product/"]').forEach(el => {
+    const title = el.textContent.trim();
+    const href = el.getAttribute('href') || '';
+    if (title) {
+      addGame(title, href || title, null, null);
+    }
+  });
+
+  // 3. Fallback table / list scanner
+  if (games.length === 0) {
+    document.querySelectorAll('table tr, ul.library-list li, .library-contents div').forEach(el => {
+      const strong = el.querySelector('strong, b, .game-name, .item-title');
+      const title = strong ? strong.textContent.trim() : '';
+      if (title) {
+        addGame(title, title, null, null);
+      }
+    });
+  }
+
+  const jsonStr = JSON.stringify(games);
+  console.log("EXTRACTED INDIEGALA GAMES (" + games.length + "):", jsonStr);
+
+  try {
+    await navigator.clipboard.writeText(jsonStr);
+    alert("SUCCESS! " + games.length + " IndieGala games extracted and automatically copied to your clipboard! Paste it directly in CrossPlay settings.");
+  } catch (e) {
+    alert("SUCCESS! " + games.length + " IndieGala games extracted. Copy the JSON from your browser console (F12) and paste it in CrossPlay.");
+  }
+})();`;
+
 // ---------------------------------------------------------------------------
 // Cloud DB proxy client (backend audit B1-A): the browser never holds Supabase
 // credentials — all database access goes through /api/db/* on this same server.
@@ -384,6 +477,12 @@ const copyLegacyScriptBtn = document.getElementById('copy-legacy-script-btn');
 const legacyJsonInput = document.getElementById('legacy-json-input');
 const importLegacyBtn = document.getElementById('import-legacy-btn');
 const resolvedLegacyCard = document.getElementById('resolved-legacy-card');
+
+// IndieGala inputs
+const copyIndiegalaScriptBtn = document.getElementById('copy-indiegala-script-btn');
+const indiegalaJsonInput = document.getElementById('indiegala-json-input');
+const importIndiegalaBtn = document.getElementById('import-indiegala-btn');
+const resolvedIndiegalaCard = document.getElementById('resolved-indiegala-card');
 
 // Add Game inputs
 const addGameBtn = document.getElementById('add-game-btn');
@@ -844,8 +943,12 @@ function loadSettingsFromStorage() {
         resolvedEpicCard.classList.remove('hidden');
       }
 
-      if (appState.legacyConnected) {
+      if (appState.legacyConnected && resolvedLegacyCard) {
         resolvedLegacyCard.classList.remove('hidden');
+      }
+
+      if (appState.indiegalaConnected && resolvedIndiegalaCard) {
+        resolvedIndiegalaCard.classList.remove('hidden');
       }
 
       // Supabase is loaded automatically from backend now.
@@ -866,6 +969,7 @@ async function saveSettingsToStorage() {
     itchCollectionUrl: appState.itchCollectionUrl,
     epicConnected: appState.epicConnected,
     legacyConnected: appState.legacyConnected,
+    indiegalaConnected: appState.indiegalaConnected,
     supabaseConfig: appState.supabaseConfig,
     blacklistAppIds: appState.blacklistAppIds,
     blacklistTitles: appState.blacklistTitles
@@ -898,6 +1002,7 @@ async function saveSettingsToStorage() {
           itch_collection_url: appState.itchCollectionUrl,
           epic_connected: appState.epicConnected,
           legacy_connected: appState.legacyConnected,
+          indiegala_connected: appState.indiegalaConnected,
           blacklist_app_ids: appState.blacklistAppIds,
           blacklist_titles: appState.blacklistTitles,
           updated_at: new Date().toISOString()
@@ -1628,7 +1733,7 @@ function setupEventListeners() {
     }
   });
 
-  // Shared importer for pasted extractor JSON — Epic & Legacy (audit F3.2).
+  // Shared importer for pasted extractor JSON — Epic, Legacy, IndieGala (audit F3.2).
   // Every parsed game passes through sanitizeGame() before it can reach
   // state or the database (audit F2: pasted text is untrusted input).
   async function importPastedLibrary({ inputEl, buttonEl, resolvedCardEl, connectedFlagKey, platform }) {
@@ -1643,7 +1748,14 @@ function setupEventListeners() {
     buttonEl.textContent = 'Parsing & Importing...';
 
     try {
-      const parsed = JSON.parse(rawJson);
+      let jsonToParse = rawJson;
+      const startIdx = rawJson.indexOf('[');
+      const endIdx = rawJson.lastIndexOf(']');
+      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+        jsonToParse = rawJson.substring(startIdx, endIdx + 1);
+      }
+
+      const parsed = JSON.parse(jsonToParse);
       if (!Array.isArray(parsed)) {
         throw new Error('Pasted content is not a valid JSON array. Please rerun the script and copy the full output.');
       }
@@ -1668,8 +1780,8 @@ function setupEventListeners() {
             name: game.title,
             playtime_forever: (existing && existing.playtime_forever) ? existing.playtime_forever : 0,
             rtime_last_played: game.date ? Math.floor(new Date(game.date).getTime() / 1000) : ((existing && existing.rtime_last_played) ? existing.rtime_last_played : 0),
-            cover_url: (existing && existing.cover_url) ? existing.cover_url : null,
-            backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : null
+            cover_url: (existing && existing.cover_url) ? existing.cover_url : (game.cover_url || null),
+            backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : (game.backdrop_url || null)
           });
         })
         .filter(Boolean);
@@ -1727,6 +1839,30 @@ function setupEventListeners() {
     }
   }
 
+  // Legacy Games - Copy Extractor Script
+  if (copyLegacyScriptBtn) {
+    copyLegacyScriptBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(LEGACY_EXTRACTOR_SCRIPT);
+        showToast('Extractor script copied to clipboard! Run it on Legacy Games Downloads/Free Games page.', 'success');
+      } catch (err) {
+        showToast('Failed to copy automatically. Please copy the script from the source.', 'error');
+      }
+    });
+  }
+
+  // IndieGala - Copy Extractor Script
+  if (copyIndiegalaScriptBtn) {
+    copyIndiegalaScriptBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(INDIEGALA_EXTRACTOR_SCRIPT);
+        showToast('Extractor script copied to clipboard! Run it on IndieGala Library / Showcase page.', 'success');
+      } catch (err) {
+        showToast('Failed to copy automatically. Please copy the script from the source.', 'error');
+      }
+    });
+  }
+
   // Epic Games - Import Paste Action
   importEpicBtn.addEventListener('click', () => {
     importPastedLibrary({
@@ -1748,6 +1884,19 @@ function setupEventListeners() {
       platform: 'Legacy'
     });
   });
+
+  // IndieGala - Import Paste Action
+  if (importIndiegalaBtn) {
+    importIndiegalaBtn.addEventListener('click', () => {
+      importPastedLibrary({
+        inputEl: indiegalaJsonInput,
+        buttonEl: importIndiegalaBtn,
+        resolvedCardEl: resolvedIndiegalaCard,
+        connectedFlagKey: 'indiegalaConnected',
+        platform: 'IndieGala'
+      });
+    });
+  }
   // Supabase connections are now handled automatically via backend configuration.
 
   // Platform Sync triggers (merged button syncs all configured platforms; dropdown syncs individually)
@@ -1889,6 +2038,10 @@ function setupEventListeners() {
                 platformGuess = 'GOG';
               } else if (lowerPlatforms.some(p => p.includes('epic'))) {
                 platformGuess = 'Epic';
+              } else if (lowerPlatforms.some(p => p.includes('ubisoft') || p.includes('uplay'))) {
+                platformGuess = 'Ubisoft';
+              } else if (lowerPlatforms.some(p => p.includes('indiegala') || p.includes('gala'))) {
+                platformGuess = 'IndieGala';
               } else if (lowerPlatforms.some(p => p.includes('itch'))) {
                 platformGuess = 'Itch.io';
               } else if (lowerPlatforms.some(p => p.includes('stove'))) {
@@ -2504,6 +2657,7 @@ function setupEventListeners() {
         gogUsername: appState.gogUsername,
         epicConnected: appState.epicConnected,
         legacyConnected: appState.legacyConnected,
+        indiegalaConnected: appState.indiegalaConnected,
         blacklistAppIds: appState.blacklistAppIds,
         blacklistTitles: appState.blacklistTitles
       };
@@ -2574,6 +2728,7 @@ function setupEventListeners() {
           appState.gogUsername = parsed.gogUsername || '';
           appState.epicConnected = parsed.epicConnected || false;
           appState.legacyConnected = parsed.legacyConnected || false;
+          appState.indiegalaConnected = parsed.indiegalaConnected || false;
           appState.blacklistAppIds = parsed.blacklistAppIds || [];
           appState.blacklistTitles = parsed.blacklistTitles || [];
 
@@ -2640,6 +2795,7 @@ async function fetchSettingsFromSupabase() {
       appState.itchCollectionUrl = data.itch_collection_url || '';
       appState.epicConnected = data.epic_connected || false;
       appState.legacyConnected = data.legacy_connected || false;
+      appState.indiegalaConnected = data.indiegala_connected || false;
       appState.blacklistAppIds = data.blacklist_app_ids || [];
       appState.blacklistTitles = data.blacklist_titles || [];
       
@@ -2678,16 +2834,22 @@ async function fetchSettingsFromSupabase() {
         resolvedItchCard.classList.add('hidden');
       }
       
-      if (appState.epicConnected) {
+      if (appState.epicConnected && resolvedEpicCard) {
         resolvedEpicCard.classList.remove('hidden');
-      } else {
+      } else if (resolvedEpicCard) {
         resolvedEpicCard.classList.add('hidden');
       }
 
-      if (appState.legacyConnected) {
+      if (appState.legacyConnected && resolvedLegacyCard) {
         resolvedLegacyCard.classList.remove('hidden');
-      } else {
+      } else if (resolvedLegacyCard) {
         resolvedLegacyCard.classList.add('hidden');
+      }
+
+      if (appState.indiegalaConnected && resolvedIndiegalaCard) {
+        resolvedIndiegalaCard.classList.remove('hidden');
+      } else if (resolvedIndiegalaCard) {
+        resolvedIndiegalaCard.classList.add('hidden');
       }
     }
   } catch (err) {
@@ -3396,9 +3558,19 @@ function getPlatformBadgeHtml(platform) {
     iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2zm-.8 15.3c-2.4 0-4.2-1.4-4.2-3.8 0-3.3 4.8-4.1 4.8-5.7 0-.5-.4-.9-1.2-.9-1 0-2.1.4-3 1l-1-1.6c1.2-.9 2.7-1.4 4.3-1.4 2.3 0 4 1.3 4 3.7 0 3.5-4.8 4.2-4.8 5.7 0 .6.5 1 1.3 1 1.2 0 2.4-.6 3.4-1.3l1 1.6c-1.3 1.1-2.9 1.7-4.6 1.7z"/>
     </svg>`;
+  } else if (p === 'ubisoft' || p === 'uplay' || p.includes('ubisoft')) {
+    platformClass = 'ubisoft';
+    iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.372 0 0 5.372 0 12c0 6.627 5.372 12 12 12s12-5.373 12-12c0-6.628-5.372-12-12-12zm6.98 12.357c-.12 3.65-2.97 6.64-6.62 6.87-3.99.25-7.39-2.85-7.39-6.84 0-3.69 2.93-6.73 6.62-6.87 2.14-.08 4.14.79 5.54 2.3l-1.63 1.63c-1-1.09-2.42-1.71-3.91-1.65-2.6.1-4.7 2.21-4.7 4.81 0 2.65 2.15 4.8 4.8 4.8 2.5 0 4.56-1.92 4.77-4.39h-4.77v-2.28h7.29c.07.54.1 1.07.1 1.62z"/>
+    </svg>`;
+  } else if (p === 'indiegala' || p === 'gala' || p.includes('indiegala')) {
+    platformClass = 'indiegala';
+    iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6.284 0c-.394 0-.714.32-.714.714v16.143l3.57 3.571V.714C9.14.32 8.82 0 8.426 0H6.284zm5.714 3.571c-.394 0-.714.32-.714.715v16.143l3.572 3.571V4.286c0-.394-.32-.715-.715-.715h-2.143zm5.716 3.572c-.394 0-.714.32-.714.714v16.143L20.57 24V7.857c0-.394-.32-.714-.714-.714h-2.142zM.57 7.143C.256 7.143 0 7.4 0 7.714v9.143l3.429 3.429V7.714c0-.315-.256-.571-.571-.571H.57z"/>
+    </svg>`;
   } else {
     // For others (Legacy, Amazon Gaming, Microsoft Store, Custom, etc.) show official joystick SVG
-    platformClass = p.includes('legacy') ? 'legacy' : (p.includes('amazon') ? 'amazon' : (p.includes('microsoft') ? 'microsoft' : (p.includes('itch') ? 'itch' : (p.includes('stove') ? 'stove' : 'other'))));
+    platformClass = p.includes('legacy') ? 'legacy' : (p.includes('amazon') ? 'amazon' : (p.includes('microsoft') ? 'microsoft' : (p.includes('itch') ? 'itch' : (p.includes('stove') ? 'stove' : (p.includes('ubisoft') ? 'ubisoft' : (p.includes('indiegala') ? 'indiegala' : 'other'))))));
     iconHtml = `<svg class="platform-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2Z"/>
       <path d="M6 15v-2"/>
@@ -3434,7 +3606,7 @@ function renderGames(shouldUpdateStats = true) {
     let matchesTab = true;
     if (appState.filters !== 'all') {
       if (appState.filters === 'other') {
-        const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna', 'Itch.io', 'itch.io', 'Stove'];
+        const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna', 'Itch.io', 'itch.io', 'Stove', 'Ubisoft', 'IndieGala'];
         matchesTab = !knownPlatforms.includes(game.platform) && game.platform?.toLowerCase() !== 'itch.io';
       } else if (appState.filters === 'Luna') {
         matchesTab = game.platform === 'Luna' || game.platform === 'Amazon Gaming';
@@ -3604,7 +3776,7 @@ function getTabFilteredGames() {
   }
   return appState.games.filter(game => {
     if (appState.filters === 'other') {
-      const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna', 'Itch.io', 'itch.io', 'Stove'];
+      const knownPlatforms = ['Steam', 'GOG', 'Epic', 'Legacy', 'Amazon Gaming', 'Microsoft Store', 'Luna', 'Itch.io', 'itch.io', 'Stove', 'Ubisoft', 'IndieGala'];
       return !knownPlatforms.includes(game.platform) && game.platform?.toLowerCase() !== 'itch.io';
     } else if (appState.filters === 'Luna') {
       return game.platform === 'Luna' || game.platform === 'Amazon Gaming';

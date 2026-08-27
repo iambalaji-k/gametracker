@@ -1108,14 +1108,35 @@ app.put('/api/db/settings', async (req, res) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return res.status(400).json({ error: 'Body must be a settings object.' });
   }
+  const currentPayload = { ...payload, id: 1 };
   try {
     await supabaseFetch('settings?on_conflict=id', {
       method: 'POST',
       headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
-      body: JSON.stringify({ ...payload, id: 1 })
+      body: JSON.stringify(currentPayload)
     });
     return res.json({ ok: true });
   } catch (error) {
+    // If a column is missing in the live Supabase schema (e.g. unapplied migration),
+    // strip the missing column and retry once so settings sync succeeds gracefully.
+    const colMatch = error.message && error.message.match(/Could not find the '([^']+)' column of 'settings'/);
+    if (colMatch && colMatch[1] && currentPayload[colMatch[1]] !== undefined) {
+      const missingCol = colMatch[1];
+      console.warn(`[Supabase Migration Notice] Column '${missingCol}' not found in public.settings. Please run 'ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS ${missingCol} BOOLEAN DEFAULT false;' in Supabase SQL editor.`);
+      delete currentPayload[missingCol];
+      try {
+        await supabaseFetch('settings?on_conflict=id', {
+          method: 'POST',
+          headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+          body: JSON.stringify(currentPayload)
+        });
+        return res.json({ ok: true, warning: `Column ${missingCol} missing from database` });
+      } catch (retryErr) {
+        console.error('PUT /api/db/settings retry failed:', retryErr.message);
+        return res.status(502).json({ error: 'Failed to write settings to database.' });
+      }
+    }
+
     console.error('PUT /api/db/settings failed:', error.message);
     return res.status(502).json({ error: 'Failed to write settings to database.' });
   }

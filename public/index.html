@@ -179,6 +179,8 @@
           <button class="tab-btn" type="button" data-filter="Microsoft Store" aria-pressed="false">Microsoft Store</button>
           <button class="tab-btn" type="button" data-filter="Itch.io" aria-pressed="false">Itch.io</button>
           <button class="tab-btn" type="button" data-filter="Stove" aria-pressed="false">Stove</button>
+          <button class="tab-btn" type="button" data-filter="Ubisoft" aria-pressed="false">Ubisoft</button>
+          <button class="tab-btn" type="button" data-filter="IndieGala" aria-pressed="false">IndieGala</button>
           <button class="tab-btn" type="button" data-filter="other" aria-pressed="false">Other</button>
         </div>
 
@@ -443,6 +445,46 @@
                   <div class="profile-status-badge badge-legacy">Ready</div>
                 </div>
               </div>
+
+              <!-- IndieGala Configuration -->
+              <div class="settings-section">
+                <h3><i data-lucide="gamepad" class="inline-icon accent-indiegala"></i> IndieGala Integration</h3>
+                <p class="section-desc">IndieGala manages purchases and showcase games inside your profile library. Follow these steps to import:</p>
+                
+                <div class="help-section help-block">
+                  <p><strong>Instructions:</strong></p>
+                  <ol class="help-list">
+                    <li>Log into <a href="https://www.indiegala.com/library" target="_blank" class="link-indiegala">IndieGala Library</a> or <a href="https://www.indiegala.com/library/showcase" target="_blank" class="link-indiegala">Showcase</a>.</li>
+                    <li>Press <strong>F12</strong> to open the developer tools console.</li>
+                    <li>Click <strong>Copy IndieGala Extractor Script</strong> below, paste it in the console, and press <strong>Enter</strong>.</li>
+                    <li>Copy the generated JSON output, paste it below, and click <strong>Import</strong>.</li>
+                  </ol>
+                </div>
+
+                <div class="form-group">
+                  <button class="btn btn-secondary btn-full" id="copy-indiegala-script-btn" style="width:100%;margin-bottom:0.75rem">
+                    <i data-lucide="copy" class="inline-icon"></i> Copy IndieGala Extractor Script
+                  </button>
+                  
+                  <label for="indiegala-json-input">Paste Extracted IndieGala Games JSON:</label>
+                  <textarea id="indiegala-json-input" rows="4" class="styled-textarea" placeholder='Paste JSON array here, e.g. [{"title": "Die Young: Prologue", ...}]'></textarea>
+                </div>
+
+                <button class="btn btn-secondary btn-indiegala" id="import-indiegala-btn" style="width:100%">
+                  <i data-lucide="file-input" class="inline-icon"></i> Import IndieGala Games Library
+                </button>
+
+                <div class="profile-resolved-card hidden" id="resolved-indiegala-card">
+                  <div class="profile-avatar-placeholder avatar-indiegala">
+                    <i data-lucide="user"></i>
+                  </div>
+                  <div class="profile-info">
+                    <h4 id="resolved-indiegala-name">IndieGala Account</h4>
+                    <p id="resolved-indiegala-id" class="help-text">Sync Status: Synced Successfully</p>
+                  </div>
+                  <div class="profile-status-badge badge-indiegala">Ready</div>
+                </div>
+              </div>
             </div>
 
             <!-- Database & Cloud Tab -->
@@ -592,6 +634,8 @@
                 <option value="Microsoft Store">Microsoft Store</option>
                 <option value="Itch.io">Itch.io</option>
                 <option value="Stove">Stove</option>
+                <option value="Ubisoft">Ubisoft</option>
+                <option value="IndieGala">IndieGala</option>
                 <option value="Other">Other / Custom</option>
               </select>
             </div>
@@ -698,6 +742,8 @@
                 <option value="Microsoft Store">Microsoft Store</option>
                 <option value="Itch.io">Itch.io</option>
                 <option value="Stove">Stove</option>
+                <option value="Ubisoft">Ubisoft</option>
+                <option value="IndieGala">IndieGala</option>
                 <option value="Other">Other / Custom</option>
               </select>
             </div>
@@ -758,6 +804,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=2.12"></script>
+  <script src="app.js?v=2.13"></script>
 </body>
 </html>
