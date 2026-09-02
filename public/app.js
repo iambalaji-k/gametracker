@@ -1762,23 +1762,25 @@ function setupEventListeners() {
 
       showToast(`Pasted ${parsed.length} games. Resolving cover arts via Steam API...`, 'info');
 
-      // Map extractor JSON properties to our internal format
-      const existingMap = new Map();
+      // Map extractor JSON properties to our internal format, preserving existing edits
+      const existingById = new Map();
+      const existingByName = new Map();
       appState.games.filter(g => g.platform === platform).forEach(g => {
-        existingMap.set(String(g.external_id), g);
+        if (g.external_id) existingById.set(String(g.external_id), g);
+        if (g.name) existingByName.set(g.name.toLowerCase().trim(), g);
       });
 
       const newGames = parsed
         .filter(game => !shouldExcludeGame(game.title, game.id))
         .map(game => {
-          const extId = game.id || String(Math.floor(Math.random() * 1000000));
-          const existing = existingMap.get(extId);
+          const extId = game.id ? String(game.id).trim() : (game.title ? String(game.title).trim() : String(Math.floor(Math.random() * 1000000)));
+          const existing = existingById.get(extId) || (game.title ? existingByName.get(game.title.toLowerCase().trim()) : null);
           return sanitizeGame({
-            external_id: extId,
+            external_id: (existing && existing.external_id) ? existing.external_id : extId,
             platform,
-            appid: game.id || '',
-            name: game.title,
-            playtime_forever: (existing && existing.playtime_forever) ? existing.playtime_forever : 0,
+            appid: game.id || (existing && existing.appid) || '',
+            name: (existing && existing.name) ? existing.name : game.title,
+            playtime_forever: (existing && existing.playtime_forever != null) ? existing.playtime_forever : 0,
             rtime_last_played: game.date ? Math.floor(new Date(game.date).getTime() / 1000) : ((existing && existing.rtime_last_played) ? existing.rtime_last_played : 0),
             cover_url: (existing && existing.cover_url) ? existing.cover_url : (game.cover_url || null),
             backdrop_url: (existing && existing.backdrop_url) ? existing.backdrop_url : (game.backdrop_url || null)
@@ -1786,20 +1788,21 @@ function setupEventListeners() {
         })
         .filter(Boolean);
 
-      // Resolve cover arts in parallel chunks to avoid server overloading
+      // Resolve cover arts in parallel chunks only for games that are missing artwork
+      const gamesNeedingArtwork = newGames.filter(g => !g.cover_url || !g.backdrop_url);
       const batchSize = 10;
-      for (let i = 0; i < newGames.length; i += batchSize) {
-        const batch = newGames.slice(i, i + batchSize);
+      for (let i = 0; i < gamesNeedingArtwork.length; i += batchSize) {
+        const batch = gamesNeedingArtwork.slice(i, i + batchSize);
 
         await Promise.all(batch.map(async game => {
           try {
             const res = await fetch(`/api/games/search-cover?name=${encodeURIComponent(game.name)}`);
             if (res.ok) {
               const coverData = await res.json();
-              if (coverData.cover_url) {
+              if (coverData.cover_url && !game.cover_url) {
                 game.cover_url = coverData.cover_url;
               }
-              if (coverData.backdrop_url) {
+              if (coverData.backdrop_url && !game.backdrop_url) {
                 game.backdrop_url = coverData.backdrop_url;
               }
             }
@@ -3050,7 +3053,7 @@ async function syncSteamLibraryCore() {
           external_id: extId,
           platform: 'Steam',
           appid: game.appid,
-          name: game.name,
+          name: (existing && existing.name) ? existing.name : game.name,
           playtime_forever: game.playtime_forever,
           rtime_last_played: game.rtime_last_played || 0,
           cover_url: (existing && existing.cover_url) ? existing.cover_url : defaultCoverUrl,
@@ -3124,7 +3127,7 @@ async function syncGogLibraryCore() {
           external_id: extId,
           platform: 'GOG',
           appid: game.appid,
-          name: game.name,
+          name: (existing && existing.name) ? existing.name : game.name,
           playtime_forever: game.playtime_forever,
           rtime_last_played: 0,
           cover_url: (existing && existing.cover_url) ? existing.cover_url : cover,
@@ -3219,7 +3222,7 @@ async function syncStoveLibraryCore() {
           external_id: extId,
           platform: 'Stove',
           appid: game.appid,
-          name: game.name,
+          name: (existing && existing.name) ? existing.name : game.name,
           playtime_forever: game.playtime_forever || 0,
           rtime_last_played: game.rtime_last_played || 0,
           cover_url: (existing && existing.cover_url) ? existing.cover_url : cover,
@@ -3257,7 +3260,7 @@ async function syncStoveLibraryCore() {
     appState.games = deduplicateGamesList(appState.games, false);
 
     saveSettingsToStorage();
-
+    
     if (isCloudEnabled()) {
       showToast('Syncing STOVE library with Supabase...', 'info');
       await syncGamesToSupabase(appState.games);
@@ -3337,7 +3340,7 @@ async function syncItchLibraryCore() {
           external_id: extId,
           platform: 'Itch.io',
           appid: game.appid,
-          name: game.name,
+          name: (existing && existing.name) ? existing.name : game.name,
           // PRESERVE user's existing playtime and last played dates
           playtime_forever: (existing && existing.playtime_forever !== undefined && existing.playtime_forever !== null) ? existing.playtime_forever : 0,
           rtime_last_played: (existing && existing.rtime_last_played !== undefined && existing.rtime_last_played !== null) ? existing.rtime_last_played : 0,
