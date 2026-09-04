@@ -1812,10 +1812,43 @@ function setupEventListeners() {
         }));
       }
 
-      // Merge into state (overwrite only this platform, preserve the rest)
+      // Additive upsert: preserve existing games of this platform, update matches in-place, and add new ones
+      const platformGames = [...appState.games.filter(g => g.platform === platform)];
+
+      for (const newG of newGames) {
+        const newStem = stemTitle(newG.name);
+        const matchIndex = platformGames.findIndex(oldG => 
+          (oldG.external_id && newG.external_id && String(oldG.external_id) === String(newG.external_id)) ||
+          (newStem && stemTitle(oldG.name) === newStem)
+        );
+
+        if (matchIndex !== -1) {
+          // Game already exists: update properties in-place without creating a duplicate
+          const existing = platformGames[matchIndex];
+          const existingIsManual = String(existing.external_id || '').startsWith('manual_');
+          const newIsManual = String(newG.external_id || '').startsWith('manual_');
+          const extIdToUse = (existingIsManual && !newIsManual) ? newG.external_id : (existing.external_id || newG.external_id);
+
+          platformGames[matchIndex] = {
+            ...existing,
+            ...newG,
+            external_id: extIdToUse,
+            name: existing.name || newG.name,
+            cover_url: existing.cover_url || newG.cover_url,
+            backdrop_url: existing.backdrop_url || newG.backdrop_url,
+            playtime_forever: Math.max(existing.playtime_forever || 0, newG.playtime_forever || 0),
+            rtime_last_played: Math.max(existing.rtime_last_played || 0, newG.rtime_last_played || 0)
+          };
+        } else {
+          // Truly new game: add it to the platform list
+          platformGames.push(newG);
+        }
+      }
+
+      // Combine other platforms + updated platform games, then run deduplication
       appState.games = deduplicateGamesList([
         ...appState.games.filter(g => g.platform !== platform),
-        ...newGames
+        ...platformGames
       ], false);
 
       appState[connectedFlagKey] = true;
@@ -3061,9 +3094,14 @@ async function syncSteamLibraryCore() {
         };
       });
 
+    const preservedManualSteam = appState.games.filter(g => 
+      g.platform === 'Steam' && String(g.external_id || '').startsWith('manual_')
+    );
+
     appState.games = [
       ...appState.games.filter(g => g.platform !== 'Steam'),
-      ...newSteamGames
+      ...newSteamGames,
+      ...preservedManualSteam
     ];
     // Dedupe at mutation time so renderGames doesn't have to on every keystroke (audit F10.1)
     appState.games = deduplicateGamesList(appState.games, false);
@@ -3157,9 +3195,14 @@ async function syncGogLibraryCore() {
       }));
     }
 
+    const preservedManualGog = appState.games.filter(g => 
+      g.platform === 'GOG' && String(g.external_id || '').startsWith('manual_')
+    );
+
     appState.games = [
       ...appState.games.filter(g => g.platform !== 'GOG'),
-      ...newGogGames
+      ...newGogGames,
+      ...preservedManualGog
     ];
     // Dedupe at mutation time so renderGames doesn't have to on every keystroke (audit F10.1)
     appState.games = deduplicateGamesList(appState.games, false);
@@ -3252,9 +3295,14 @@ async function syncStoveLibraryCore() {
       }));
     }
 
+    const preservedManualStove = appState.games.filter(g => 
+      g.platform === 'Stove' && String(g.external_id || '').startsWith('manual_')
+    );
+
     appState.games = [
       ...appState.games.filter(g => g.platform !== 'Stove'),
-      ...newStoveGames
+      ...newStoveGames,
+      ...preservedManualStove
     ];
     // Dedupe at mutation time so renderGames doesn't have to on every keystroke (audit F10.1)
     appState.games = deduplicateGamesList(appState.games, false);
@@ -3383,30 +3431,30 @@ async function syncItchLibraryCore() {
 
     const cleanItchList = deduplicateGamesList(newItchGames, false);
 
-    // Delete any old manual_... rows from Supabase so they don't linger in DB
+    // Delete only upgraded manual_... rows from Supabase that have now been matched to official collection items
     if (isCloudEnabled()) {
-      const oldManualIds = existingItchGames
-        .filter(g => String(g.external_id || '').startsWith('manual_'))
-        .map(g => String(g.external_id));
+      const upgradedManualIds = Array.from(matchedExistingExtIds)
+        .filter(id => id.startsWith('manual_'));
 
-      if (oldManualIds.length > 0) {
-        console.log('[CrossPlay Itch Sync] Deleting obsolete manual entries from Supabase:', oldManualIds);
+      if (upgradedManualIds.length > 0) {
+        console.log('[CrossPlay Itch Sync] Deleting upgraded manual entries from Supabase:', upgradedManualIds);
         try {
-          await dbDeleteGamesByPlatformIds('Itch.io', oldManualIds);
+          await dbDeleteGamesByPlatformIds('Itch.io', upgradedManualIds);
         } catch (err) {
-          console.warn('Failed to delete obsolete manual rows from Supabase:', err);
+          console.warn('Failed to delete upgraded manual rows from Supabase:', err);
         }
       }
     }
 
-    // Merge: Replace Itch games with the exact synced collection (preserving all other platforms)
+    // Merge: Replace Itch games with the synced collection + preserved manual games (preserving all other platforms)
     appState.games = deduplicateGamesList([
       ...appState.games.filter(g => {
         const p = (g.platform || '').toLowerCase();
         return p !== 'itch.io' && p !== 'itch';
       }),
-      ...cleanItchList
-    ], true);
+      ...cleanItchList,
+      ...preservedManualGames
+    ], false);
 
     saveSettingsToStorage();
 
